@@ -6,11 +6,12 @@ from collections import Counter, OrderedDict
 from tqdm import tqdm
 from logbatcher.cluster import Cluster,tokenize, vectorize, cluster, reassign_clusters
 from logbatcher.additional_cluster import hierichical_clustering,meanshift_clustering
-from logbatcher.matching import matches_template
+from logbatcher.matching import matches_template, extract_variables
 from logbatcher.util import verify_template
 
+from logbatcher.parsing_cache import ParsingCache, tree_match
 
-def single_dataset_paring(dataset, contents, output_dir, parser, batch_size = 10, chunk_size = 2000 , sample_method = 'dpp', clustering_method = 'dbscan', data_type = '2k', debug=True):
+def single_dataset_paring(dataset, contents, output_dir, parser, batch_size = 10, chunk_size = 10000 , sample_method = 'dpp', clustering_method = 'dbscan', debug=True):
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -20,35 +21,26 @@ def single_dataset_paring(dataset, contents, output_dir, parser, batch_size = 10
     cache_pairs = {}
     log_chunk = []
     log_chunk_index = []
-    remove_duplicate = True if data_type == 'full' else False
-    cache_sort_step = len(logs) // 100
+    correction_list = []
+    caching = ParsingCache()
     print(f'Parsing {len(logs)} logs in dataset {dataset}...')
 
-    # temp to store parsing results
-    if remove_duplicate:
-        temp_logs = logs.copy()
-        logs = list(OrderedDict.fromkeys(logs))
     outputs = [None for _ in range(len(logs))]
+    outputs_index = [None for _ in range(len(logs))]
     
     # Parsing
     t1 = time.time()
     iterable = tqdm(enumerate(logs), total=len(logs), unit="log")
     for index, log in iterable:
 
-        # Cache Sorting
-        if (index % cache_sort_step) == 0 and len(cache_pairs) != 0:
-            cache_pairs = dict(sorted(cache_pairs.items(), key=lambda item: item[1][1], reverse=True))
-
-        # Cache Matching
-        for template, value_f in cache_pairs.items():
-            match_result = matches_template(log, [value_f[0], template])
-            if match_result != None and match_result in cache_pairs:
-                cache_pairs[match_result][1] += 1
-                outputs[index] = match_result
-                break
-        if outputs[index] == None:
+        match_results = caching.match_event(log)
+        if match_results[0] != "NoMatch":
+            # outputs[index] = match_results[0]
+            outputs_index[index] = match_results[1]
+        else:
             log_chunk.append(log)
             log_chunk_index.append(index)
+        
 
         # Parsing with LLM
         if len(log_chunk) == chunk_size or (len(log_chunk)!=0 and index == len(logs) - 1):
@@ -78,10 +70,10 @@ def single_dataset_paring(dataset, contents, output_dir, parser, batch_size = 10
 
             # batching
             [cluster.batching(batch_size, sample_method) for cluster in clusters]
-        
+
             # parsing
             for index, old_cluster in enumerate(clusters):
-                template, old_cluster, new_cluster = parser.get_responce(old_cluster, cache_pairs, dataset = dataset, data_type = data_type)
+                template, old_cluster, new_cluster = parser.get_responce(old_cluster, cache_base = caching)
 
                 if debug:
                     print('=' * 20)
@@ -95,31 +87,34 @@ def single_dataset_paring(dataset, contents, output_dir, parser, batch_size = 10
                     clusters.append(new_cluster)
                     cluster_nums += 1
 
-                if template not in cache_pairs and verify_template(template):
+                if verify_template(template):
+                    # match_results = caching.match_event(old_cluster.logs[0])
+                    match_results = tree_match(caching.template_tree, old_cluster.logs[0])
                     identified_templates_num += 1
-                    cache_pairs[template] = [old_cluster.logs[0], 0]
-                
+                    id, similar_template, success = caching.add_templates(template, True, match_results[2])
+                    if similar_template != None:
+                        correction_list.append({"old": similar_template, "new": template})
+                    # Add variables to cache
+                    variables = extract_variables(old_cluster.logs[0], template)
+                    for variable in variables:
+                        if variable not in caching.variable_candidates and not variable.isdigit():
+                            caching.variable_candidates.append(variable)
                 for index in old_cluster.indexs:
-                    outputs[index] = template
+                    # outputs[index] = template
+                    outputs_index[index] = id
             log_chunk = []
             log_chunk_index = []
     
-    if remove_duplicate:
-        print("map the outputs")
-        log_to_index = {log: index for index, log in enumerate(logs)}
-        temp_outputs = []
-        for log in tqdm(temp_logs):
-            temp_outputs.append(outputs[log_to_index[log]])
-        outputs = temp_outputs
-        logs = temp_logs
-    
+
+    outputs = [caching.template_list[i] for i in outputs_index]
+
     # Result
     t2 = time.time()
     print(f'parsing time: {t2 - t1}')
     print(f'idetified templates: {len(set(outputs))}')
 
     # output logs
-    output_log_file = output_dir + f'{dataset}_{data_type}.log_structured.csv'
+    output_log_file = output_dir + f'{dataset}_full.log_structured.csv'
     df = pd.DataFrame({'Content': logs, 'EventTemplate': outputs})
     df.to_csv(output_log_file, index=False)
 
@@ -127,7 +122,7 @@ def single_dataset_paring(dataset, contents, output_dir, parser, batch_size = 10
     counter = Counter(outputs)
     items = list(counter.items())
     items.sort(key=lambda x: x[1], reverse=True)
-    output_template_file = output_dir + f'{dataset}_{data_type}.template_structured.csv'
+    output_template_file = output_dir + f'{dataset}_full.template_structured.csv'
     template_df = pd.DataFrame(items, columns=['EventTemplate', 'Occurrence'])
     template_df['EventID'] = [f"E{i + 1}" for i in range(len(template_df))]
     template_df[['EventID', 'EventTemplate', 'Occurrence']].to_csv(output_template_file, index=False)
@@ -140,8 +135,12 @@ def single_dataset_paring(dataset, contents, output_dir, parser, batch_size = 10
             time_table = json.load(file)
     time_table[dataset] = {
         'InvocatingTime': parser.time_consumption_llm.__round__(3),
-        'ParsingTime': (t2 - t1).__round__(3)
+        'ParsingTime': (t2 - t1).__round__(3),
+        'HitNum': caching.hit_num,
+        'CorrectionList': correction_list
     }
-    parser.time_consumption_llm = 0
+
+    print(caching.variable_candidates)
+    print(caching.hit_num)
     with open(time_cost_file, 'w') as file:
         json.dump(time_table, file)

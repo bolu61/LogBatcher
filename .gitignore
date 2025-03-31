@@ -4,3 +4,9 @@ outputs/
 __pycache__/
 dist/
 *.tar
+
+cache_info.log
+cache_test.py
+temp_eval.sh
+test.ipynb
+datasets/loghub-2.0/*

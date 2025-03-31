@@ -1,6 +1,6 @@
 import re
 
-def post_process(response, data_type):
+def post_process(response, data_type = "full"):
 
     response = response.replace('\n', '')
     first_backtick_index = response.find('`')
@@ -202,10 +202,8 @@ def correct_single_template_full(template, user_strings=None):
         # if re.match(r'^(\/[^\/]+)+$', p_token) or re.match(r'^([a-zA-Z0-9-]+\.){2,}[a-zA-Z]+$', p_token):
         if re.match(r'^(\/[^\/]+)+\/?$', p_token) or re.match(r'^([a-z0-9-]+\.){2,}[a-z]+$', p_token):
             p_token = '<*>'
-        if all(x in p_token for x in {'<*>', '.', '/'}):
+        if all(x in p_token for x in {'.', '/'}):
             p_token = '<*>'
-        # if re.search(r'(?=.*<\*>)(?=.*\.)(?=.*\/)', p_token):
-        #     p_token = '<*>'
         
         new_p_tokens.append(p_token)
     template = ''.join(new_p_tokens)

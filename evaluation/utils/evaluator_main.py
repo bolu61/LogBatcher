@@ -169,11 +169,11 @@ def evaluator(
     
     tqdm.pandas()
     # ! temporary removes
-    # print("Start to align null values and inconsistent labels")
-    # parsedresult['EventTemplate'] = parsedresult.progress_apply(align_with_null_values, axis=1)
-    # groundtruth['EventTemplate'] = groundtruth.progress_apply(align_with_null_values, axis=1)
-    # parsedresult['EventTemplate'] = parsedresult['EventTemplate'].apply(lambda x: correct_template_general(x, dataset))
-    # groundtruth['EventTemplate'] = groundtruth['EventTemplate'].apply(lambda x: correct_template_general(x, dataset))
+    print("Start to align null values and inconsistent labels")
+    parsedresult['EventTemplate'] = parsedresult.progress_apply(align_with_null_values, axis=1)
+    groundtruth['EventTemplate'] = groundtruth.progress_apply(align_with_null_values, axis=1)
+    parsedresult['EventTemplate'] = parsedresult['EventTemplate'].apply(lambda x: correct_template_general(x, dataset))
+    groundtruth['EventTemplate'] = groundtruth['EventTemplate'].apply(lambda x: correct_template_general(x, dataset))
 
     # calculate Edit Distance
     print('Calculating Edit Distance....')

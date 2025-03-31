@@ -63,7 +63,7 @@ class Parser:
             else:
                 return output
 
-    def get_responce(self, cluster, cached_pairs={}, sample_pairs=[], shot=0, dataset='Apache', data_type='2k'):
+    def get_responce(self, cluster, cache_base, sample_pairs=[], shot=0, data_type='2k'):
 
         # initialize
         logs = cluster.batch_logs
@@ -71,40 +71,40 @@ class Parser:
         if type(logs) == str:
             logs = [logs]
 
-        if not_varibility(logs) and data_type == 'full':
-            print("no varibility")
+        if not_varibility(logs):
+            # print("no varibility")
             logs = [f'`{sample_log}`']
             logs = [sample_log]
-
         new_cluster = Cluster()
-        # caching
-        for template, referlog_and_freq in cached_pairs.items():
+
+        # inner caching
+        for template in cache_base.template_list:
             for log in cluster.logs:
-                match_result = matches_template(
-                    log, [referlog_and_freq[0], template])
+                match_result = matches_template(log, [log, template])
                 if match_result != None:
                     cluster, new_cluster = prune_from_cluster(
                         template, cluster)
-                    cached_pairs[template][1] += len(new_cluster.logs)
-                    # print(f"cache hit: {match_result}")
                     return match_result, cluster, new_cluster
 
-        demonstrations = ''
 
-        # using labelled data
-        if shot > 0:
-            nearest_k_pairs = nearest_k_pairs_from_log(
-                sample_log, sample_pairs, shot)
-            for i in range(shot):
-                demonstrations += f"Log message: `{nearest_k_pairs[shot - i - 1][0]}`\nLog template: `{nearest_k_pairs[shot - i - 1][1].replace('<*>', '{{variable}}')}`\n"
+        # historical variables
+        variable_cluster = Cluster()
+        variable_cluster.logs = cache_base.variable_candidates
+        if variable_cluster.logs != []:
+            variable_cluster.batching(5, 'dpp')
+        variables = variable_cluster.batch_logs
+
 
         # prompt format: instruction + (demonstration) + query(logs)
-        instruction = "You will be provided with some log messages separated by line break. You must abstract variables with `{{placeholders}}` to extract the corresponding template. There might be no variables in the log message.\nPrint the input log's template delimited by backticks."
+        instruction_old = "You will be provided with some log messages separated by line break. You must abstract variables with `{{placeholders}}` to extract the corresponding template. There might be no variables in the log message.\nPrint the input log's template delimited by backticks."
 
-        if demonstrations != '':
-            query = demonstrations + 'Log message:\n' + \
-                '\n'.join([f'`{log}`'for log in logs]) + '\nLog template: '
-        elif all(model_tpye not in self.model for model_tpye in ['gpt', 'instruct', 'chat']):
+        if variables != []:
+            variable_prompt = f' Historical variables: {variables}.'
+        else:
+            variable_prompt = ''
+        instruction = "You will be provided with some log messages separated by line break. You must abstract variables with `{{placeholders}}` to extract the corresponding template. The variable type in log messages can be any of the following: ['url', 'IPv4_port', 'host_port', 'package_host', 'IPv6', 'Mac_address', 'time', 'path', 'block', 'date', 'duration', 'size', 'numerical', 'weekday_months', 'system_specific varaibles']." + variable_prompt + " There might be no variables in the log message.\nPrint the input log's template delimited by backticks."
+
+        if all(model_tpye not in self.model for model_tpye in ['gpt', 'instruct', 'chat']):
             query = 'Log message:\n' + \
                 '\n'.join([f'`{log}`'for log in logs]) + '\nLog template: '
         else:
@@ -128,12 +128,9 @@ class Parser:
             prompt = f"{instruction}\n{query}"
             answer = self.inference(prompt)
         
-        template = post_process(answer, data_type)
+        template = post_process(answer)
         if not verify_template(template):
-            if data_type == 'full':
-                template = correct_single_template_full(sample_log)
-            else:
-                template = correct_single_template(sample_log)
+            template = correct_single_template_full(sample_log)
 
         # matching and pruning
         for log in logs:
@@ -150,9 +147,6 @@ class Parser:
                     template += parts[index + 1]
                 break
         else:
-            if data_type == 'full':
-                template = correct_single_template_full(sample_log)
-            else:
-                template = correct_single_template(sample_log)
+            template = correct_single_template_full(sample_log)
         cluster, new_cluster = prune_from_cluster(template, cluster)
         return template, cluster, new_cluster

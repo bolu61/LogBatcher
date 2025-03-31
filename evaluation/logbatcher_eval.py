@@ -44,14 +44,13 @@ datasets_2k = [
 ]
 
 datasets_full = datasets_2k[:-2]
-
 if __name__ == "__main__":
     args = common_args()
     datasets = datasets_2k if args.data_type == "2k" else datasets_full
     otc = True if args.data_type == "2k" else False
 
     # ! Replace the path
-    input_dir = "../datasets/loghub-2k/"
+    input_dir = "../datasets/loghub-2.0/"
     output_dir = f"../outputs/parser/{args.config}" 
 
     if not os.path.exists(output_dir):

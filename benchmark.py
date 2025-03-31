@@ -8,17 +8,15 @@ from logbatcher.parsing_base import single_dataset_paring
 
 def set_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_type', type=str, default='2k', choices=['2k', 'full'],
-                        help='evaluate on 2k or full dataset.')
-    parser.add_argument('--model', type=str, default='gpt-3.5-turbo-0125',
-                        help='the Large Lauguage model used in LogBatcher, default to be gpt-3.5-turbo-0125.')
+    parser.add_argument('--model', type=str, default='gpt-4o-mini',
+                        help='the Large Lauguage model used in LogBatcher, default to be gpt-4o-mini.')
     parser.add_argument('--batch_size', type=int, default=10, 
                         help='The size of a batch.')
     parser.add_argument('--sample_method', type=str, default='dpp', choices=['dpp', 'random', 'similar'],
                         help='Sample method: dpp, random, similar.')
-    parser.add_argument('--chunk_size', type=int, default=2000,
+    parser.add_argument('--chunk_size', type=int, default=10000,
                         help='Size of logs in a chunk.')
-    parser.add_argument('--dataset', type=str, default='null')
+    parser.add_argument('--config', type=str, default="null")
     args = parser.parse_args()
     return args
 
@@ -26,38 +24,25 @@ def set_args():
 if __name__ == "__main__":
     args = set_args()
 
-    datasets = ['BGL', 'HDFS', 'OpenStack', 'OpenSSH', 'HPC', 'Zookeeper', 'Spark', 'Proxifier', 'HealthApp', 'Mac', 'Hadoop', 'Apache', 'Linux', 'Thunderbird', 'Windows', 'Android']
+    datasets = ['BGL', 'HDFS', 'OpenStack', 'OpenSSH', 'HPC', 'Zookeeper', 'Spark', 'Proxifier', 'HealthApp', 'Mac', 'Hadoop', 'Apache', 'Linux', 'Thunderbird']
 
-    # loghub-2.0 does not have dataset Windows and Android
-    if args.data_type == 'full':
-        datasets = datasets[:-2]
-
-    # evaluate on a single dataset or your own dataset
-    if args.dataset != 'null':
-        datasets = [args.dataset]
-    
-    # the file name of the output
-    theme = f"logbatcher_{args.data_type}"
-    output_dir = f'outputs/parser/{theme}/'
-    
+    # output dir
+    if args.config == 'null':
+        output_folder = f"logb2_{args.model.split('/')[-1].replace('.','_').replace('-','_')}"
+    else:
+        output_folder = args.config
+    output_dir = f'outputs/parser/{output_folder}/'
 
     # load api key and dataset format
     with open('config.json', 'r') as f:
         config = json.load(f)
-    
-    parser = Parser(args.model, theme, config)
+    parser = Parser(args.model, output_folder, config)
     for index, dataset in enumerate(datasets):
         if os.path.exists(f'{output_dir}{dataset}_full.log_structured.csv'):
             print(f'{dataset} has been parsed, skip it.')
             continue
 
-        # Initializing
-        if args.data_type == '2k':
-            structured_log_file = f'datasets/loghub-2k/{dataset}/{dataset}_2k.log_structured_corrected.csv'
-        elif args.data_type == 'full':
-            structured_log_file = f'datasets/loghub-2.0/{dataset}/{dataset}_full.log_structured.csv'
-        else:
-            raise ValueError('data_type should be 2k or full')
+        structured_log_file = f'datasets/loghub-2.0/{dataset}/{dataset}_full.log_structured.csv'
         
         log_file_format = 'structured'
         if log_file_format == 'structured':
@@ -80,6 +65,6 @@ if __name__ == "__main__":
             batch_size=args.batch_size,
             chunk_size=args.chunk_size,
             sample_method = args.sample_method,
-            data_type = args.data_type
         )
         print('time cost by llm: ', parser.time_consumption_llm)
+        parser.time_consumption_llm = 0
