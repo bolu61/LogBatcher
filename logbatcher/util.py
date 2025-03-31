@@ -97,6 +97,9 @@ def log_to_dataframe(log_file, regex, headers, size):
         with open(log_file, 'r') as file:
             for line in [next(file) for _ in range(size)]:
                 try:
+                    if not headers:  # If no headers are defined
+                        log_contents.append(line.strip())
+                        continue
                     match = regex.search(line.strip())
                     message = [match.group(header) for header in headers]
                     log_contents.append(message[-1])
