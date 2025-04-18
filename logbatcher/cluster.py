@@ -4,25 +4,46 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import DBSCAN
 from logbatcher.sample import group_samples_clustering, dpp_sample
+from logbatcher.util import not_varibility
 import random
-
 class Cluster:
     def __init__(self):
         self.logs = []
         self.batch_logs = []
         self.indexs = []
         self.size = 0
+        self.sample_log = ''
         
 
     def append_log(self, log, index):
         self.logs.append(log)
         self.indexs.append(index)
         self.size += 1
-    
-    def batching(self, batch_size=10, sample_method="dpp"):
+
+    def varaible_sampling(self, batch_size=10,sample_method="dpp"):
+        self.batch_logs = list(OrderedDict.fromkeys(self.logs)) # remove duplicates
+        def _replacer(match):
+            char = match.group()
+            return '0' if char.isdigit() else 'a'
+        vars = []
+        for var in self.batch_logs:
+            vars.append(re.sub(r'[0-9a-zA-Z]', _replacer, var))
+        vectorizer = TfidfVectorizer()
+        tfidf_matrix = vectorizer.fit_transform(vars)
+        tfidf_matrix = tfidf_matrix.toarray()
+        similarity_matrix = cosine_similarity(tfidf_matrix)
+        result = dpp_sample(similarity_matrix, batch_size)
+        self.batch_logs = [self.batch_logs[i] for i in result]
+
+    def batching(self, batch_size=10, sample_method="dpp", min_size=3):
         self.batch_logs = list(OrderedDict.fromkeys(self.logs)) # remove duplicates
         if len(self.batch_logs) > batch_size:
             self.sample(batch_size, sample_method)
+        if type(self.batch_logs) == str:
+            self.batch_logs = [self.batch_logs]
+        self.sample_log = self.batch_logs[0]
+        if not_varibility(self.batch_logs):
+            self.batch_logs = self.batch_logs[:min_size] if len(self.batch_logs) > min_size else self.batch_logs
 
     def sample(self, batch_size, sample_method):
         # vetorize logs
@@ -58,9 +79,10 @@ def tokenize(log_content, tokenize_pattern=r'[ ,|]', removeDight=True):
 
         elif removeDight and re.search(r'\d', word):
             pass
-        elif '/' in word.lower():
+        elif '/' in word.lower() or re.match(r"^[a-zA-Z][+-]$|^[+-][a-zA-Z]$", word):
             pass
         else:
+            word = re.sub(r"\([^)]*\)", "", word)
             new_words.append(word)
     new_words = [word for word in new_words if word]   # remove null
     if new_words == []:
@@ -73,7 +95,7 @@ def vectorize(tokenized_logs):
     return vectorizer.fit_transform(tokenized_logs)
 
 
-def cluster(vectorized_logs, eps=0.1):
+def cluster(vectorized_logs, eps=0.5):
     cluster = DBSCAN(eps=eps, min_samples=5)
     cluster.fit(vectorized_logs)
     labels = cluster.labels_
@@ -94,3 +116,10 @@ def reassign_clusters(labels, cluster_nums, tokenized_logs):
             labels[i] = cluster_nums
             cluster_nums += 1
     return labels, cluster_nums
+
+def process_new_cluster(new_cluster, clusters, batch_size, sample_method, min_size):
+    if new_cluster.size != 0:
+        new_cluster.batching(batch_size, sample_method, min_size)
+        clusters.append(new_cluster)
+        return 1
+    return 0

@@ -10,7 +10,6 @@ def timeout_handler(signum, frame):
     raise TimeoutException()
 
 def safe_search(pattern, string, timeout=0.5):
-    # 设置超时信号
     signal.signal(signal.SIGALRM, timeout_handler)
     signal.alarm(timeout)
     try:
@@ -18,7 +17,7 @@ def safe_search(pattern, string, timeout=0.5):
     except TimeoutException:
         result = None
     finally:
-        signal.alarm(0)  # 取消超时
+        signal.alarm(0)
     return result
 
 
@@ -73,13 +72,10 @@ def prune_from_cluster(template, cluster):
     for log, index in zip(logs, indexs):
         if extract_variables(log, template) == None:
             new_cluster.append_log(log, index)
-
-    if new_cluster.size == 0:
-        return cluster, new_cluster
-    else:
+    if new_cluster.size != 0:
         old_logs = [log for log in logs if log not in new_cluster.logs]
         old_indexs = [index for index in indexs if index not in new_cluster.indexs]
         cluster.logs = old_logs
         cluster.indexs = old_indexs
         # print(f"prune {new_cluster.size} logs from {len(logs)} logs in mathcing process")
-        return cluster, new_cluster
+    return cluster, new_cluster

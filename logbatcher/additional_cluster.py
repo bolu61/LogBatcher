@@ -120,7 +120,7 @@ def assign_labels(clusters, logs, granularity="coarse"):
 
     return labels
 
-def hierichical_clustering(logs, granularity="coarse"):
+def hierichical_clustering(logs, granularity="fine"):
     contents = {}
     for i, x in enumerate(logs):
         x, fx = clean(x)

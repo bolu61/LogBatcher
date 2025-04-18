@@ -19,14 +19,14 @@ def data_loader(file_name, dataset_format, file_format):
 def count_prompt_tokens(prompt, model_name):
     """
     Count the number of tokens in the prompt
-    Models supported: gpt-4, gpt-3.5-turbo
+    Models supported: gpt-4o-mini, gpt-3.5-turbo
     """
-    if model_name == "gpt-4":
-        encoder = tiktoken.encoding_for_model("gpt-4")
-    elif model_name == "gpt-3.5-turbo":
-        encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
+    if model_name == 'gpt-4o-mini':
+        encoder = tiktoken.encoding_for_model('gpt-4o-mini')
+    elif model_name == 'gpt-3.5-turbo':
+        encoder = tiktoken.encoding_for_model('gpt-3.5-turbo')
     else:
-        raise ValueError("未知的模型名称")
+        raise ValueError("Unsupported model: {}".format(model_name))
 
     # 计算编码后的token数
     prompt_tokens = encoder.encode(prompt)
@@ -36,25 +36,21 @@ def count_prompt_tokens(prompt, model_name):
 def count_message_tokens(messages, model_name="gpt-3.5-turbo"):
     """
     Count the number of tokens in the messages
-    Models supported: gpt-4, gpt-3.5-turbo
+    Models supported: gpt-4o-mini, gpt-3.5-turbo
     """
-    if model_name == "gpt-4":
-        encoder = tiktoken.encoding_for_model("gpt-4")
-    elif model_name == "gpt-3.5-turbo":
-        encoder = tiktoken.encoding_for_model("gpt-3.5-turbo")
+    if model_name == 'gpt-4o-mini':
+        encoder = tiktoken.encoding_for_model('gpt-4o-mini')
+    elif model_name == 'gpt-3.5-turbo':
+        encoder = tiktoken.encoding_for_model('gpt-3.5-turbo')
     else:
-        raise ValueError("未知的模型名称")
+        raise ValueError("Unsupported model: {}".format(model_name))
 
-    # 初始化token计数
     token_count = 0
 
-    # 计算每个消息的token数
     for message in messages:
         role_tokens = encoder.encode(message['role'])
         content_tokens = encoder.encode(message['content'])
-        token_count += len(role_tokens) + len(content_tokens) + 4  # 加上特殊的消息分隔符的token数
-        # token_count +=  len(content_tokens) + 4  # 加上特殊的消息分隔符的token数
-        # print(token_count)
+        token_count += len(role_tokens) + len(content_tokens) + 4
     return token_count
 
 

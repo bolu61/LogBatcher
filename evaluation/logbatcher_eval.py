@@ -23,6 +23,25 @@ from evaluation.utils.common import common_args
 from evaluation.utils.evaluator_main import evaluator, prepare_results
 from evaluation.utils.postprocess import post_average
 
+def should_skip_dataset(result_file, dataset):
+    """Check if the dataset should be skipped based on the result file."""
+    if not os.path.exists(result_file):
+        return False
+    with open(result_file, 'r') as file:
+        lines = file.readlines()
+    for line in lines:
+        if line.startswith(dataset):
+            parts = line.strip().split(',')
+            # Check if all other fields are not empty or None
+            if all(part not in ('', 'None') for part in parts[1:]):
+                return True
+            else:
+                # Remove the line if other fields are empty or None
+                lines.remove(line)
+                with open(result_file, 'w') as file:
+                    file.writelines(lines)
+                return False
+    return False
 
 datasets_2k = [
     "Proxifier",
@@ -65,7 +84,13 @@ if __name__ == "__main__":
     if args.dataset != "null":
         datasets = [args.dataset]
 
+
+
     for dataset in datasets:
+        if should_skip_dataset(os.path.join(output_dir, result_file), dataset):
+            print(f"Skipping dataset {dataset} as it already has valid results.")
+            continue
+
         setting = benchmark_settings[dataset]
         log_file = setting['log_file'].replace("_2k", f"_{args.data_type}")
         if os.path.exists(os.path.join(output_dir, f"{dataset}.log_structured.csv")):

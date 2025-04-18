@@ -1,4 +1,5 @@
 from collections import defaultdict, Counter, OrderedDict
+import difflib
 from hashlib import sha256
 import re
 import sys
@@ -6,22 +7,42 @@ import sys
 sys.setrecursionlimit(1000000)
 import multiprocessing as mp
 
-def standardize(log: str) -> str:
+import re
+import signal
 
-    # dg_pattern = re.compile(r'\b\d+\b')
-    # ds_pattern = re.compile(r'\s+')
-    # ss_pattern = re.compile(r'[\/,:._-]')
-    # va_pattern = re.compile(r'<\*>')
-    # blk_pattern = re.compile(r'blk_\d+')
-    # node_pattern = re.compile(r'node-[a-zA-Z]+')
+class TimeoutException(Exception):
+    pass
 
-    standardized = re.sub(r'\b\d+\b', '', log)  # DG
-    standardized = re.sub(r'\s+', '', standardized)  # DS / SS
-    standardized = re.sub(r'<\*>', '', standardized)
-    standardized = re.sub(r'[\/,:._-]', '', standardized)
-    standardized = re.sub(r'<\*>', '', standardized)
-    standardized = standardized.replace('blk', '').replace('node', '')
-    return standardized
+def timeout_handler(signum, frame):
+    raise TimeoutException()
+
+def safe_search(pattern, string, timeout=1):
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(timeout)
+    try:
+        result = re.search(pattern, string)
+    except TimeoutException:
+        result = None
+    finally:
+        signal.alarm(0)
+    return result
+
+# _PATTERN = re.compile(r'(?:<\*>|\b\d+\b|[\s\/,:._-]+)')
+# def old_standardize(log: str) -> str:
+#     return _PATTERN.sub('', log)
+
+# TODO: logb2 v3.1
+_PATTERN1 = re.compile(r'/([^/]*)(?=/)')  # path
+_PATTERN2 = re.compile(r'\d')               # digit
+_PATTERN3 = re.compile(r'[\/:,._-]+')        # : , . _ -
+_PATTERN4 = re.compile(r'\s')           # space
+
+def standardize(input_string: str) -> str:
+    result = _PATTERN1.sub('', input_string)
+    result = _PATTERN2.sub('', result)
+    result = _PATTERN3.sub('', result)
+    result = _PATTERN4.sub('', result)
+    return result
 
 def print_tree(move_tree, indent=' '):
     for key, value in move_tree.items():
@@ -53,8 +74,7 @@ class ParsingCache(object):
         self.hashing_cache = {}
         self.variable_candidates = []
         self.hit_num = 0
-    
-    def add_templates(self, event_template, insert=True, relevant_templates=[]):
+    def add_templates(self, event_template, insert=True, relevant_templates=[], refer_log = ''):
 
             # if "<*>" not in event_template:
             #     self.template_tree["$CONSTANT_TEMPLATE$"][event_template] = event_template
@@ -66,7 +86,7 @@ class ParsingCache(object):
         if not template_tokens or event_template == "<*>":
             return -1,None,None
         if insert or len(relevant_templates) == 0:
-            id = self.insert(event_template, template_tokens, len(self.template_list))
+            id = self.insert(event_template, template_tokens, len(self.template_list), refer_log)
             self.template_list.append(event_template)
             return id,None,None
         # print("relevant templates: ", relevant_templates)
@@ -81,18 +101,18 @@ class ParsingCache(object):
                 max_similarity = similarity
                 similar_template = rt
         if max_similarity > 0.8:
-            success, id = self.modify(similar_template, event_template)
+            success, id = self.modify(similar_template, event_template, refer_log)
             if not success:
-                id = self.insert(event_template, template_tokens, len(self.template_list))
+                id = self.insert(event_template, template_tokens, len(self.template_list), refer_log)
                 self.template_list.append(event_template)
             return id, similar_template, success
         else:
-            id = self.insert(event_template, template_tokens, len(self.template_list))
+            id = self.insert(event_template, template_tokens, len(self.template_list), refer_log)
             self.template_list.append(event_template)
             return id,None,None
             #print("template tokens: ", template_tokens)
             
-    def insert(self, event_template, template_tokens, template_id):
+    def insert(self, event_template, template_tokens, template_id, refer_log = ''):
 
         standardized = standardize(event_template)
         hash_key = sha256(standardized.encode()).hexdigest()
@@ -115,12 +135,12 @@ class ParsingCache(object):
             sum(1 for s in template_tokens if s != "<*>"),
             template_tokens.count("<*>"),
             event_template,
-            template_id
+            template_id,
+            refer_log
         )  # statistic length, count of <*>, original_log, template_id
         return template_id
 
-    def modify(self, similar_template, event_template):
-        
+    def modify(self, similar_template, event_template, refer_log):
         merged_template = []
         similar_tokens = similar_template.split()
         event_tokens = event_template.split()
@@ -139,7 +159,7 @@ class ParsingCache(object):
         success, old_ids = self.delete(similar_template)
         if not success:
             return False, -1
-        self.insert(merged_template, message_split(merged_template), old_ids)
+        self.insert(merged_template, message_split(merged_template), old_ids, refer_log)
         self.template_list[old_ids] = merged_template
         return True, old_ids
         
@@ -171,7 +191,12 @@ class ParsingCache(object):
             if cached_str == standardized:
                 self.hit_num += 1
                 return template, id, []
-        return tree_match(self.template_tree, log)
+        results = tree_match(self.template_tree, self.template_list, log)
+        if results[0] != "NoMatch":
+            standardized = standardize(log)
+            hash_key = sha256(standardized.encode()).hexdigest()
+            self.hashing_cache[hash_key] = (standardized, results[0], results[1])
+        return results
 
 
     def _preprocess_template(self, template):
@@ -217,20 +242,24 @@ def message_split(message):
 
 
 
-def tree_match(match_tree, log_content):
+def tree_match(match_tree,template_list, log_content):
     log_tokens = message_split(log_content)
-    template, template_id, parameter_str = match_template(match_tree, log_tokens)
+    template, template_id, refer_log, relevant_templates = match_template(match_tree, log_tokens)
+    # length matters
     if template:
-        return (template, template_id, parameter_str)
-    else:
-        return ("NoMatch", "NoMatch", parameter_str)
+        if abs(len(log_content.split()) - len(refer_log.split())) <= 1:
+            return (template, template_id, relevant_templates)
+    elif len(relevant_templates) > 0:
+        if match_log(log_content, relevant_templates[0]):
+            return (relevant_templates[0], template_list.index(relevant_templates[0]), relevant_templates)
+    return ("NoMatch", "NoMatch", relevant_templates)
 
 def match_log(log ,template):
     pattern_parts = template.split("<*>")
     pattern_parts_escaped = [re.escape(part) for part in pattern_parts]
     regex_pattern = "(.*?)".join(pattern_parts_escaped)
     regex = "^" + regex_pattern + "$"  
-    matches = re.search(regex, log)
+    matches = safe_search(regex, log)
 
     if matches == None:
         return False
@@ -251,8 +280,8 @@ def match_template(match_tree, log_tokens):
     if len(new_results) > 0:
         if len(new_results) > 1:
             new_results.sort(key=lambda x: (-x[1][0], x[1][1]))
-        return new_results[0][1][2], new_results[0][1][3], new_results[0][2]
-    return False, False, relevant_templates
+        return new_results[0][1][2], new_results[0][1][3], new_results[0][1][4], relevant_templates
+    return False, False, '', relevant_templates
 
 
 def get_all_templates(move_tree):

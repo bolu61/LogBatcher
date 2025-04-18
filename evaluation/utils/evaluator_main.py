@@ -26,6 +26,8 @@ from evaluation.utils.PA_calculator import calculate_parsing_accuracy, calculate
 from evaluation.utils.ED_calculator import calculate_edit_distance
 import pandas as pd
 
+_compiled_template_cache = {}
+_compiled_regex_cache = {}
 
 def prepare_results(output_dir, otc):
     if not os.path.exists(output_dir):
@@ -44,8 +46,12 @@ def prepare_results(output_dir, otc):
     return result_file
 
 
-def correct_template_general(template, dataset):
+def correct_template_general(groundtruth_row):
     # Substitute consecutive variables only if separated with any delimiter including "." (DV)
+    template = groundtruth_row['EventTemplate']
+    start = template
+    if start in _compiled_template_cache:
+        return _compiled_template_cache[start]
     while True:
         prev = template
         template = re.sub(r'<\*>\.<\*>', '<*>', template)
@@ -57,22 +63,23 @@ def correct_template_general(template, dataset):
     #print("CV: ", template)
     while True:
         prev = template
+        template = re.sub(r'\s+', ' ', template)
         template = re.sub(r'<\*><\*>', '<*>', template)
         template = re.sub(r'<\*>\:<\*>', '<*>', template)
         template = re.sub(r'<\*> <\*>', '<*>', template)
         # All
         template = re.sub(r'\'<\*>\'', '<*>', template)
-        template = re.sub(r'<\*> [KGTM]?B', '<*>', template)
+        template = re.sub(r'<\*> [KGTM]?B\b', '<*>', template)
         # HPC
         template = re.sub(r'node-<\*>', '<*>', template)
         template = re.sub(r'node-\[<\*>\]', '<*>', template)
         # HealthApp
         template = re.sub(r'<\*>\#\#<\*>', '<*>', template)
         template = re.sub(r'<\*>\,<\*>', '<*>', template)
-        # OpenStack
-        template = re.sub(r'GET <\*>', '<*>', template)
-        template = re.sub(r'POST <\*>', '<*>', template)
-        template = re.sub(r'DELETE <\*>', '<*>', template)
+        # Apache and OpenStack
+        # template = re.sub(r'GET <\*>', '<*>', template)
+        # template = re.sub(r'POST <\*>', '<*>', template)
+        # template = re.sub(r'DELETE <\*>', '<*>', template)
         # Linux and OpenSSH
         template = re.sub(r'tty\=ssh', 'tty=<*>', template)
         template = re.sub(r'tty\=NODEVssh', 'tty=<*>', template)
@@ -82,34 +89,36 @@ def correct_template_general(template, dataset):
 
     while "<*>:<*>" in template:
         template = template.replace("<*>:<*>", "<*>")
-
+    _compiled_template_cache[start] = template
     return template
 
-def align_with_null_values(groudtruth_row):
+
+def align_with_null_values(groundtruth_row):
     """
-    Align the null values in the groundtruth with Content.
+    Align the null values in the groundtruth with Content, optimized with caching.
     """
+    log = groundtruth_row['Content']
+    template = groundtruth_row['EventTemplate']
 
-    log = groudtruth_row['Content']
-    template = groudtruth_row['EventTemplate']
+    if template in _compiled_regex_cache:
+        regex, pattern_parts = _compiled_regex_cache[template]
+    else:
+        pattern_parts = template.split("<*>")
+        pattern_parts_escaped = [re.escape(part) for part in pattern_parts]
+        regex_pattern = "^" + "(.*?)".join(pattern_parts_escaped) + "$"
+        regex = re.compile(regex_pattern)
+        _compiled_regex_cache[template] = (regex, pattern_parts)
 
-    pattern_parts = template.split("<*>")
-    pattern_parts_escaped = [re.escape(part) for part in pattern_parts]
-    regex_pattern = "(.*?)".join(pattern_parts_escaped)
-    regex = "^" + regex_pattern + "$"  
-    matches = re.search(regex, log)
-
-    if matches == None:
+    matches = regex.search(log)
+    if not matches:
         return template
 
+    groups = matches.groups()
     parts = []
-    for index, part in enumerate(template.split("<*>")):
+    for index, part in enumerate(pattern_parts):
         parts.append(part)
-        if index < len(matches.groups()):
-            if matches.groups()[index] == '':
-                parts.append('')
-            else:
-                parts.append('<*>')
+        if index < len(groups):
+            parts.append('' if groups[index] == '' else '<*>')
     return ''.join(parts)
 
 def is_file_empty(file_path):
@@ -142,7 +151,7 @@ def evaluator(
         groundtruth = os.path.join(indir, log_file_basename + '_structured.csv')
 
     parsedresult = os.path.join(output_dir, log_file_basename + '_structured.csv')
-
+    # parsing_error_result = os.path.join(output_dir, log_file_basename + '_parsing_error.csv')
     # if not os.path.exists(parsedresult):
     #     with open(parsedresult, 'w') as fw:
     #         pass
@@ -168,12 +177,24 @@ def evaluator(
     groundtruth = pd.read_csv(groundtruth, dtype=str)
     
     tqdm.pandas()
+    global _compiled_template_cache
+    global _compiled_regex_cache
+    _compiled_template_cache = {}
+    _compiled_regex_cache = {}
     # ! temporary removes
     print("Start to align null values and inconsistent labels")
     parsedresult['EventTemplate'] = parsedresult.progress_apply(align_with_null_values, axis=1)
     groundtruth['EventTemplate'] = groundtruth.progress_apply(align_with_null_values, axis=1)
-    parsedresult['EventTemplate'] = parsedresult['EventTemplate'].apply(lambda x: correct_template_general(x, dataset))
-    groundtruth['EventTemplate'] = groundtruth['EventTemplate'].apply(lambda x: correct_template_general(x, dataset))
+    parsedresult['EventTemplate'] = parsedresult.progress_apply(correct_template_general, axis=1)
+    groundtruth['EventTemplate'] = groundtruth.progress_apply(correct_template_general, axis=1)
+
+    # output errors
+    # items = []
+    # for index, row in groundtruth.iterrows():
+    #     if row['EventTemplate'] != parsedresult.iloc[index]['EventTemplate']:
+    #         items.append([str(row['Content']), str(row['EventTemplate']), str(parsedresult.iloc[index]['EventTemplate'])])
+    # template_df = pd.DataFrame(items, columns=['Log', 'GroundTruth', 'EventTemplate'])
+    # template_df[['Log', 'GroundTruth', 'EventTemplate']].to_csv(parsing_error_result, index=False)
 
     # calculate Edit Distance
     print('Calculating Edit Distance....')

@@ -12,6 +12,8 @@ def set_args():
                         help='the Large Lauguage model used in LogBatcher, default to be gpt-4o-mini.')
     parser.add_argument('--dataset', type=str, default='Proxifier')
     parser.add_argument('--folder', type=str, default='test')
+    parser.add_argument('--benchmark_mode', type=int, default=0,
+                        help='different setting')
     args = parser.parse_args()
     return args
 
@@ -41,4 +43,5 @@ if __name__ == '__main__':
         output_dir= f'outputs/parser/{folder_name}/',
         parser=parser,
         debug=True,
+        benchmark_mode=args.benchmark_mode
     )
