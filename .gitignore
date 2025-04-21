@@ -5,13 +5,9 @@ __pycache__/
 dist/
 *.tar
 docs/exps/
-cache_info.log
-cache_test.py
 temp_eval.sh
 test.ipynb
 tools.ipynb
 datasets/loghub-2.0/*
 demo_rs.py
-draw.ipynb
-parsing_demo.sh
-parsing.sh
+*.ipynb

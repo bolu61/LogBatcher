@@ -12,14 +12,8 @@ def set_args():
                         help='the Large Lauguage model used in LogBatcher, default to be gpt-4o-mini.')
     parser.add_argument('--batch_size', type=int, default=10, 
                         help='The size of a batch.')
-    parser.add_argument('--min_size', type=int, default=3,
-                        help='Minimum size of logs in a batch.')
-    parser.add_argument('--sample_method', type=str, default='dpp', choices=['dpp', 'random', 'similar'],
-                        help='Sample method: dpp, random, similar.')
     parser.add_argument('--chunk_size', type=int, default=10000,
                         help='Size of logs in a chunk.')
-    parser.add_argument('--benchmark_mode', type=int, default=0,
-                        help='different setting')
     parser.add_argument('--config', type=str, default="null")
     args = parser.parse_args()
     return args
@@ -32,7 +26,7 @@ if __name__ == "__main__":
 
     # output dir
     if args.config == 'null':
-        output_folder = f"logb2_minsize{args.min_size}"
+        output_folder = f"logbatcher"
     else:
         output_folder = args.config
     output_dir = f'outputs/parser/{output_folder}/'
@@ -59,17 +53,16 @@ if __name__ == "__main__":
             logs = log_to_dataframe(log_file, regex, headers, len(log_raws))
         else:
             raise ValueError('log_file_format should be structured or raw')
-
+        
+        parser.dataset = dataset
         single_dataset_paring(
             dataset=dataset,
             contents=logs,
             output_dir=output_dir, 
             parser=parser, 
             batch_size=args.batch_size,
-            chunk_size=args.chunk_size,
-            sample_method = args.sample_method,
-            min_size = args.min_size,
-            benchmark_mode = args.benchmark_mode,
+            chunk_size=args.chunk_size
         )
         print('time cost by llm: ', parser.time_consumption_llm)
         parser.time_consumption_llm = 0
+        parser.token_list = [0, 0]

@@ -20,7 +20,7 @@ class Cluster:
         self.indexs.append(index)
         self.size += 1
 
-    def varaible_sampling(self, batch_size=10,sample_method="dpp"):
+    def varaible_sampling(self, batch_size=5,sample_method="dpp"):
         self.batch_logs = list(OrderedDict.fromkeys(self.logs)) # remove duplicates
         def _replacer(match):
             char = match.group()
@@ -31,11 +31,23 @@ class Cluster:
         vectorizer = TfidfVectorizer()
         tfidf_matrix = vectorizer.fit_transform(vars)
         tfidf_matrix = tfidf_matrix.toarray()
-        similarity_matrix = cosine_similarity(tfidf_matrix)
-        result = dpp_sample(similarity_matrix, batch_size)
+
+        # sample
+        if len(self.batch_logs) <= batch_size:
+            result = range(len(self.batch_logs))
+        elif sample_method == "dpp":
+            similarity_matrix = cosine_similarity(tfidf_matrix)
+            result = dpp_sample(similarity_matrix, batch_size)
+        elif sample_method == "random":
+            random.seed(0)
+            result = random.sample(range(0, len(self.batch_logs)), batch_size)
+        elif sample_method == "similar":
+            result = group_samples_clustering(tfidf_matrix, batch_size)[0]
+        else:
+            raise ValueError("Invalid sample method")
         self.batch_logs = [self.batch_logs[i] for i in result]
 
-    def batching(self, batch_size=10, sample_method="dpp", min_size=3):
+    def batching(self, batch_size=10, min_size=3, sample_method="dpp"):
         self.batch_logs = list(OrderedDict.fromkeys(self.logs)) # remove duplicates
         if len(self.batch_logs) > batch_size:
             self.sample(batch_size, sample_method)
@@ -117,9 +129,9 @@ def reassign_clusters(labels, cluster_nums, tokenized_logs):
             cluster_nums += 1
     return labels, cluster_nums
 
-def process_new_cluster(new_cluster, clusters, batch_size, sample_method, min_size):
+def process_new_cluster(new_cluster, clusters, batch_size, min_size=3):
     if new_cluster.size != 0:
-        new_cluster.batching(batch_size, sample_method, min_size)
+        new_cluster.batching(batch_size, min_size)
         clusters.append(new_cluster)
         return 1
     return 0

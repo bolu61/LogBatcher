@@ -10,10 +10,9 @@ def set_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='gpt-4o-mini',
                         help='the Large Lauguage model used in LogBatcher, default to be gpt-4o-mini.')
-    parser.add_argument('--dataset', type=str, default='Proxifier')
+    parser.add_argument('--dataset', type=str, default='Apache')
     parser.add_argument('--folder', type=str, default='test')
-    parser.add_argument('--benchmark_mode', type=int, default=0,
-                        help='different setting')
+    parser.add_argument('--batch_size', type=int, default=10)
     args = parser.parse_args()
     return args
 
@@ -43,5 +42,5 @@ if __name__ == '__main__':
         output_dir= f'outputs/parser/{folder_name}/',
         parser=parser,
         debug=True,
-        benchmark_mode=args.benchmark_mode
+        batch_size=args.batch_size
     )

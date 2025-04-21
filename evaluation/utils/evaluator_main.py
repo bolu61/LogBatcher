@@ -24,24 +24,25 @@ from evaluation.utils.GA_calculator import evaluate
 from evaluation.utils.template_level_analysis import evaluate_template_level, evaluate_template_level_lstm
 from evaluation.utils.PA_calculator import calculate_parsing_accuracy, calculate_parsing_accuracy_lstm
 from evaluation.utils.ED_calculator import calculate_edit_distance
+from evaluation.utils.util import safe_search
 import pandas as pd
 
 _compiled_template_cache = {}
 _compiled_regex_cache = {}
 
-def prepare_results(output_dir, otc):
+def prepare_results(output_dir):
     if not os.path.exists(output_dir):
         # make output directory
         os.makedirs(output_dir)
 
     # make a new summary file
-    dataset_type = '2k' if otc else 'full'
+    dataset_type = 'full'
     result_file = f'summary_{dataset_type}.csv'
     if not os.path.exists(os.path.join(output_dir, result_file)):
         with open(os.path.join(output_dir, result_file), 'w') as csv_file:
             fw = csv.writer(csv_file, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
-            fw.writerow(['Dataset', 'invacation_time', 'parsing_time', 'identified_templates',
-                        'ground_templates', 'GA', 'PA', 'FGA', 'FTA', 'ED'])
+            fw.writerow(['Dataset', 'invacation_time', 'parsing_time', 'invocation',
+                        'token_consumption', 'GA', 'PA', 'FGA', 'FTA', 'ED'])
 
     return result_file
 
@@ -109,7 +110,8 @@ def align_with_null_values(groundtruth_row):
         regex = re.compile(regex_pattern)
         _compiled_regex_cache[template] = (regex, pattern_parts)
 
-    matches = regex.search(log)
+    # matches = regex.search(log)
+    matches = safe_search(regex, log)
     if not matches:
         return template
 
@@ -132,7 +134,6 @@ def evaluator(
         input_dir,
         output_dir,
         log_file,
-        otc,
         result_file,
         lstm=False
 ):
@@ -140,21 +141,13 @@ def evaluator(
     Unit function to run the evaluation for a specific configuration.
 
     """
-
     print('\n=== Evaluation on %s ===' % dataset)
     indir = os.path.join(input_dir, os.path.dirname(log_file))
     log_file_basename = os.path.basename(log_file)
-    if otc:
-        # use a structured log file with corrected oracle templates
-        groundtruth = os.path.join(indir, log_file_basename + '_structured_corrected.csv')
-    else:
-        groundtruth = os.path.join(indir, log_file_basename + '_structured.csv')
 
+    groundtruth = os.path.join(indir, log_file_basename + '_structured.csv')
     parsedresult = os.path.join(output_dir, log_file_basename + '_structured.csv')
-    # parsing_error_result = os.path.join(output_dir, log_file_basename + '_parsing_error.csv')
-    # if not os.path.exists(parsedresult):
-    #     with open(parsedresult, 'w') as fw:
-    #         pass
+
     print(parsedresult)
     if not os.path.exists(parsedresult) or is_file_empty(parsedresult):
         print("No output file generated.")
@@ -181,20 +174,13 @@ def evaluator(
     global _compiled_regex_cache
     _compiled_template_cache = {}
     _compiled_regex_cache = {}
-    # ! temporary removes
+
+    # align null values and inconsistent labels
     print("Start to align null values and inconsistent labels")
     parsedresult['EventTemplate'] = parsedresult.progress_apply(align_with_null_values, axis=1)
     groundtruth['EventTemplate'] = groundtruth.progress_apply(align_with_null_values, axis=1)
     parsedresult['EventTemplate'] = parsedresult.progress_apply(correct_template_general, axis=1)
     groundtruth['EventTemplate'] = groundtruth.progress_apply(correct_template_general, axis=1)
-
-    # output errors
-    # items = []
-    # for index, row in groundtruth.iterrows():
-    #     if row['EventTemplate'] != parsedresult.iloc[index]['EventTemplate']:
-    #         items.append([str(row['Content']), str(row['EventTemplate']), str(parsedresult.iloc[index]['EventTemplate'])])
-    # template_df = pd.DataFrame(items, columns=['Log', 'GroundTruth', 'EventTemplate'])
-    # template_df[['Log', 'GroundTruth', 'EventTemplate']].to_csv(parsing_error_result, index=False)
 
     # calculate Edit Distance
     print('Calculating Edit Distance....')
@@ -238,13 +224,15 @@ def evaluator(
             time_table = json.load(file)
             invocation_time = time_table[dataset]['InvocatingTime']
             parsing_time = time_table[dataset]['ParsingTime']
+            invocation = time_table[dataset]['TokenCount'][0]
+            token_consumption = time_table[dataset]['TokenCount'][1]
             
     # parsing_time = 0
     result = dataset + ',' + \
              "{:.3f}".format(invocation_time) + ',' + \
              "{:.3f}".format(parsing_time) + ',' + \
-             str(tool_templates) + ',' + \
-             str(ground_templates) + ',' + \
+             "{:.3f}".format(invocation)  + ',' + \
+             "{:.3f}".format(token_consumption)  + ',' + \
              "{:.3f}".format(GA) + ',' + \
              "{:.3f}".format(PA) + ',' + \
              "{:.3f}".format(FGA) + ',' + \

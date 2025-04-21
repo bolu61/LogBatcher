@@ -29,21 +29,20 @@ def should_skip_dataset(result_file, dataset):
         return False
     with open(result_file, 'r') as file:
         lines = file.readlines()
+    flag = False
     for line in lines:
         if line.startswith(dataset):
             parts = line.strip().split(',')
-            # Check if all other fields are not empty or None
             if all(part not in ('', 'None') for part in parts[1:]):
-                return True
+                flag = True
             else:
-                # Remove the line if other fields are empty or None
                 lines.remove(line)
-                with open(result_file, 'w') as file:
-                    file.writelines(lines)
-                return False
-    return False
+    
+    with open(result_file, 'w') as file:
+        file.writelines(lines)
+    return flag
 
-datasets_2k = [
+datasets = [
     "Proxifier",
     "Linux",
     "Apache",
@@ -57,18 +56,11 @@ datasets_2k = [
     "Spark",
     "Thunderbird",
     "BGL",
-    "HDFS",
-    "Windows",
-    "Android"
+    "HDFS"
 ]
 
-datasets_full = datasets_2k[:-2]
 if __name__ == "__main__":
     args = common_args()
-    datasets = datasets_2k if args.data_type == "2k" else datasets_full
-    otc = True if args.data_type == "2k" else False
-
-    # ! Replace the path
     input_dir = "../datasets/loghub-2.0/"
     output_dir = f"../outputs/parser/{args.config}" 
 
@@ -78,8 +70,7 @@ if __name__ == "__main__":
 
     # prepare results file
     result_file = prepare_results(
-        output_dir=output_dir,
-        otc=otc,
+        output_dir=output_dir
     )
     if args.dataset != "null":
         datasets = [args.dataset]
@@ -103,7 +94,6 @@ if __name__ == "__main__":
             input_dir=input_dir,
             output_dir=output_dir,
             log_file=log_file,
-            otc=otc,
             result_file=result_file,
         )  # it internally saves the results into a summary file
     metric_file = os.path.join(output_dir, result_file)
