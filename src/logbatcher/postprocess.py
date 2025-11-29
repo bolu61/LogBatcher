@@ -1,36 +1,43 @@
 import re
 
-def post_process(response):
+from logbatcher.cache import Template
 
-    response = response.replace('\n', '')
-    first_backtick_index = response.find('`')
-    last_backtick_index = response.rfind('`')
-    if first_backtick_index == -1 or last_backtick_index == -1 or first_backtick_index == last_backtick_index:
+
+def post_process(response):
+    response = response.replace("\n", "")
+    first_backtick_index = response.find("`")
+    last_backtick_index = response.rfind("`")
+    if (
+        first_backtick_index == -1
+        or last_backtick_index == -1
+        or first_backtick_index == last_backtick_index
+    ):
         tmps = []
     else:
-        tmps = response[first_backtick_index: last_backtick_index + 1].split('`')
+        tmps = response[first_backtick_index : last_backtick_index + 1].split("`")
     for tmp in tmps:
-        if tmp.replace(' ','').replace('<*>','') == '':
+        if tmp.replace(" ", "").replace("<*>", "") == "":
             tmps.remove(tmp)
-    tmp = ''
+    tmp = ""
     if len(tmps) == 1:
         tmp = tmps[0]
     if len(tmps) > 1:
         tmp = max(tmps, key=len)
 
-    template = re.sub(r'\{\{.*?\}\}', '<*>', tmp)
-    template = re.sub(r'\$\{.*?\}', '<*>', template)
+    template = re.sub(r"\{\{.*?\}\}", "<*>", tmp)
+    template = re.sub(r"\$\{.*?\}", "<*>", template)
     template = correct_single_template(template)
-    if template.replace('<*>', '').replace(' ','') == '':
-        template = ''
+    if template.replace("<*>", "").replace(" ", "") == "":
+        template = ""
 
     return template
 
+
 def exclude_digits(string):
-    '''
+    """
     exclude the digits-domain words from partial constant
-    '''
-    pattern = r'\d'
+    """
+    pattern = r"\d"
     digits = re.findall(pattern, string)
     if len(digits) == 0 or string[0].isalpha() or any(c.isupper() for c in string):
         return False
@@ -39,7 +46,8 @@ def exclude_digits(string):
     else:
         return len(digits) / len(string) > 0.3
 
-def correct_single_template(template, user_strings=None):
+
+def correct_single_template(template: Template, user_strings=None):
     """Apply all rules to process a template.
 
     DS (Double Space)
@@ -53,16 +61,38 @@ def correct_single_template(template, user_strings=None):
 
     """
 
-    boolean = {'true', 'false'}
-    default_strings = {'null', 'root'} # 'null', 'root', 'admin'
+    boolean = {"true", "false"}
+    default_strings = {"null", "root"}  # 'null', 'root', 'admin'
     path_delimiters = {  # reduced set of delimiters for tokenizing for checking the path-like strings
-        r'\s', r'\,', r'\!', r'\;', r'\:',
-        r'\=', r'\|', r'\"', r'\'', r'\+',
-        r'\[', r'\]', r'\(', r'\)', r'\{', r'\}'
+        r"\s",
+        r"\,",
+        r"\!",
+        r"\;",
+        r"\:",
+        r"\=",
+        r"\|",
+        r"\"",
+        r"\'",
+        r"\+",
+        r"\[",
+        r"\]",
+        r"\(",
+        r"\)",
+        r"\{",
+        r"\}",
     }
-    token_delimiters = path_delimiters.union({  # all delimiters for tokenizing the remaining rules
-        r'\.', r'\-', r'\@', r'\#', r'\$', r'\%', r'\&', r'\/'
-    })
+    token_delimiters = path_delimiters.union(
+        {  # all delimiters for tokenizing the remaining rules
+            r"\.",
+            r"\-",
+            r"\@",
+            r"\#",
+            r"\$",
+            r"\%",
+            r"\&",
+            r"\/",
+        }
+    )
 
     if user_strings:
         default_strings = default_strings.union(user_strings)
@@ -71,50 +101,58 @@ def correct_single_template(template, user_strings=None):
     # apply DS
     # Note: this is not necessary while postprorcessing
     template = template.strip()
-    template = re.sub(r'\s+', ' ', template)
+    template = re.sub(r"\s+", " ", template)
 
     # apply PS
-    p_tokens = re.split('(' + '|'.join(path_delimiters) + ')', template)
+    p_tokens = re.split("(" + "|".join(path_delimiters) + ")", template)
     new_p_tokens = []
     for p_token in p_tokens:
         # print(p_token)
         # if re.match(r'^(\/[^\/]+)+$', p_token) or re.match(r'^([a-zA-Z0-9-]+\.){2,}[a-zA-Z]+$', p_token):
-        if re.match(r'^(\/[^\/]+)+\/?$', p_token) or re.match(r'.*/.*\..*', p_token) or re.match(r'^([a-zA-Z0-9-]+\.){3,}[a-z]+$', p_token):
-        # or re.match(r'^([a-z0-9-]+\.){2,}[a-z]+$', p_token)
-            p_token = '<*>'
-        
+        if (
+            re.match(r"^(\/[^\/]+)+\/?$", p_token)
+            or re.match(r".*/.*\..*", p_token)
+            or re.match(r"^([a-zA-Z0-9-]+\.){3,}[a-z]+$", p_token)
+        ):
+            # or re.match(r'^([a-z0-9-]+\.){2,}[a-z]+$', p_token)
+            p_token = "<*>"
+
         new_p_tokens.append(p_token)
-    template = ''.join(new_p_tokens)
+    template = "".join(new_p_tokens)
     # tokenize for the remaining rules
-    tokens = re.split('(' + '|'.join(token_delimiters) + ')', template)  # tokenizing while keeping delimiters
+    tokens = re.split(
+        "(" + "|".join(token_delimiters) + ")", template
+    )  # tokenizing while keeping delimiters
     new_tokens = []
     for token in tokens:
         # apply BL, US
         for to_replace in boolean.union(default_strings):
             # if token.lower() == to_replace.lower():
             if token == to_replace:
-                token = '<*>'
+                token = "<*>"
 
         # apply DG
         # Note: hexadecimal num also appears a lot in the logs
         # if re.match(r'^\d+$', token) or re.match(r'\b0[xX][0-9a-fA-F]+\b', token):
         #     token = '<*>'
         if exclude_digits(token):
-            token = '<*>'
+            token = "<*>"
 
         # apply WV
-        if re.match(r'^[^\s\/]*<\*>[^\s\/]*$', token) or re.match(r'^<\*>.*<\*>$', token):
-            token = '<*>'
+        if re.match(r"^[^\s\/]*<\*>[^\s\/]*$", token) or re.match(
+            r"^<\*>.*<\*>$", token
+        ):
+            token = "<*>"
         # collect the result
         new_tokens.append(token)
 
     # make the template using new_tokens
-    template = ''.join(new_tokens)
+    template = "".join(new_tokens)
 
     # Substitute consecutive variables only if separated with any delimiter including "." (DV)
     while True:
         prev = template
-        template = re.sub(r'<\*>\.<\*>', '<*>', template)
+        template = re.sub(r"<\*>\.<\*>", "<*>", template)
         if prev == template:
             break
 
@@ -122,7 +160,7 @@ def correct_single_template(template, user_strings=None):
     # NOTE: this should be done at the end
     while True:
         prev = template
-        template = re.sub(r'<\*><\*>', '<*>', template)
+        template = re.sub(r"<\*><\*>", "<*>", template)
         if prev == template:
             break
 
@@ -154,7 +192,7 @@ def correct_single_template(template, user_strings=None):
         template = template.replace("<*>.<*>", "<*>")
 
     while ' "<*>" ' in template:
-        template = template.replace(' "<*>" ', ' <*> ')
+        template = template.replace(' "<*>" ', " <*> ")
 
     while " '<*>' " in template:
         template = template.replace(" '<*>' ", " <*> ")
@@ -162,7 +200,6 @@ def correct_single_template(template, user_strings=None):
     while "<*><*>" in template:
         template = template.replace("<*><*>", "<*>")
 
-    template = re.sub(r'<\*> [KGTM]?B\b', '<*>', template)
+    template = re.sub(r"<\*> [KGTM]?B\b", "<*>", template)
 
     return template
-

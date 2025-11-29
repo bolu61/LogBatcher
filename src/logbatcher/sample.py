@@ -1,8 +1,9 @@
+import random
+
+import numpy as np
+from sklearn.cluster import KMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import random
-from sklearn.cluster import KMeans
-import numpy as np
 
 
 def dpp_sample(S, k):

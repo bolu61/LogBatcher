@@ -2,7 +2,6 @@ import calendar
 import heapq
 import random
 import re
-import time
 from collections import Counter, OrderedDict
 
 from sklearn.cluster import DBSCAN, MeanShift

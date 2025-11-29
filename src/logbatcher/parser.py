@@ -1,15 +1,15 @@
 import csv
 import logging
 import re
-import string
 from collections.abc import Sequence
 from itertools import batched, islice
+import string
 from typing import Any
 
 from openai import OpenAI
 from typeguard import check_type
 
-from logbatcher.cache import ParsingCache
+from logbatcher.cache import ParsingCache, Template
 from logbatcher.cluster import (
     Cluster,
     cluster,
@@ -54,24 +54,26 @@ class LogBatcher:
         )
         return (response.choices[0].message.content or "").strip("\n")
 
-    def get_responce(self, cluster: Cluster) -> tuple[str, Cluster, Cluster]:
+    # TODO: refactor
+    def get_responce(self, cluster: Cluster) -> tuple[Template, Cluster, Cluster]:
         # initialize
         logs = cluster.batch_logs
         sample_log = cluster.sample_log
         cache_base = self.cache
 
+        # TODO: refactor and move to parse
         # Matching and Pruning
         new_cluster = Cluster()
         for log in cluster.logs:
-            template, _, _ = cache_base.match_event(log)
-            if template != "NoMatch":
-                cluster, new_cluster = prune_from_cluster(template, cluster)
+            if (match := cache_base.match(log)) is not None:
+                cluster, new_cluster = prune_from_cluster(match.template, cluster)
                 if new_cluster.size >= 0 and new_cluster.size < cluster.size:
-                    return template, cluster, new_cluster
+                    return match.template, cluster, new_cluster
                 elif new_cluster.size == cluster.size:
                     cluster.logs, cluster.indexs = new_cluster.logs, new_cluster.indexs
                     new_cluster = Cluster()
 
+        # TODO: refactor clusters and variable clusters
         # historical variables
         variable_cluster = Cluster()
         variable_cluster.logs = cache_base.variable_candidates
@@ -107,16 +109,17 @@ class LogBatcher:
             logger.warning(f"{sample_log=} not parsed")
             answer = sample_log
 
-        template = post_process(answer)
+        template: Template = tokenize(post_process(answer))
 
+        # TODO: refactor
         if not verify_template(template):
-            template = correct_single_template(sample_log)
+            template = correct_single_template(tokenize(sample_log))
 
         cluster, new_cluster = prune_from_cluster(template, cluster)
         if new_cluster.size == cluster.size:
             cluster.logs, cluster.indexs = new_cluster.logs, new_cluster.indexs
             new_cluster = Cluster()
-            template = correct_single_template(sample_log)
+            template = correct_single_template(tokenize(sample_log))
 
         return template, cluster, new_cluster
 
@@ -128,18 +131,20 @@ class LogBatcher:
         chunk_size: int = 10_000,
         clustering_method: str = "dbscan",
     ) -> list[str]:
+        if len(logs) <= chunk_size:
+            logger.warning(f"{len(logs)=} is smaller than 10_000")
+
         log_chunk = []
         log_chunk_index = []
         caching = self.cache
 
-        outputs: list[str | None] = [None for _ in range(len(logs))]
+        outputs: list[Template | None] = [None for _ in range(len(logs))]
 
         # Parsing
         for batch in batched(enumerate(logs), n=chunk_size):
             for i, log in batch:
-                result, template_id, _ = caching.match_event(log)
-                if result != "NoMatch" and template_id != "NoMatch":
-                    outputs[i] = caching.template_list[template_id]
+                if (match := caching.match(log)) is not None:
+                    outputs[i] = match.template
                 else:
                     log_chunk.append(log)
                     log_chunk_index.append(i)
@@ -175,49 +180,51 @@ class LogBatcher:
                 template, old_cluster, new_cluster = self.get_responce(old_cluster)
                 # update clusters
                 cluster_nums += process_new_cluster(new_cluster, clusters, batch_size)
-                refer_log = old_cluster.logs[0]
-                id: int
-                if template not in caching.template_list:
-                    if verify_template(template):
-                        id, _, _ = caching.add_templates(
-                            event_template=template,
-                            insert=False,
-                            refer_log=refer_log,
+                if template not in caching:
+                    try:
+                        caching.insert(
+                            template=template,
                         )
-                        caching.variable_candidates.extend(
-                            vars_update(
-                                refer_log, template, caching.variable_candidates
-                            )
+                    except ValueError as e:
+                        logger.warning(e)
+                        continue
+                    caching.variable_candidates.update(
+                        vars_update(
+                            old_cluster.logs[0], template, caching.variable_candidates
                         )
-                    else:
-                        id, _, _ = caching.add_templates(
-                            event_template=refer_log,
-                            insert=False,
-                            refer_log=refer_log,
-                        )
-                else:
-                    id = caching.template_list.index(template)
+                    )
                 for i in old_cluster.indexs:
-                    outputs[i] = caching.template_list[id]
+                    outputs[i] = template
 
         return [check_type(s, str) for s in outputs]
 
 
-def verify_template(template):
-    template = template.replace("<*>", "")
-    template = template.replace(" ", "")
-    return any(char not in string.punctuation for char in template)
+def verify_template(template: Template) -> bool:
+    out = ""
+    for token in template:
+        token = token.replace("<*>", "")
+        token = token.replace(" ", "")
+        out += token
+    return any(char not in string.punctuation for char in out)
 
-def vars_update(refer_log, template, candidates):
+
+# TODO: refactor
+def vars_update(refer_log: str, template: Template, candidates: set[str]) -> list[str]:
     new_variables = extract_variables(refer_log, template)
     extend_vars = []
     if not new_variables:
         return extend_vars
     for var in new_variables:
-        var = re.sub(r'^\((.*)\)$|^\[(.*)\]$', r'\1\2', var)
-        if var not in candidates and not var.isdigit() and not var.isalpha() and len(var.split()) <= 3:
+        var = re.sub(r"^\((.*)\)$|^\[(.*)\]$", r"\1\2", var)
+        if (
+            var not in candidates
+            and not var.isdigit()
+            and not var.isalpha()
+            and len(var.split()) <= 3
+        ):
             extend_vars.append(var)
     return extend_vars
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
