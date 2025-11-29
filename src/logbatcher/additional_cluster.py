@@ -1,15 +1,11 @@
-import pandas as pd
-import re
-import heapq
-from collections import Counter, defaultdict, deque, OrderedDict
-from sklearn.feature_extraction._stop_words import ENGLISH_STOP_WORDS
-import time
 import calendar
-import random
-import os
+import heapq
+import re
+import time
+from collections import Counter
+
 from sklearn.cluster import MeanShift
 from sklearn.feature_extraction.text import TfidfVectorizer
-
 
 
 class Vocab:
@@ -28,7 +24,6 @@ class Vocab:
           + list(calendar.month_name) + list(calendar.month_abbr)
         self.token_counter = Counter()
         self.stopwords = frozenset(set(stopwords))
-        #print(self.__filter_stopwords(['LDAP', 'Built', 'with']))
 
     def build(self, sequences):
         print("Build vocab with examples: ", len(sequences))
