@@ -285,12 +285,11 @@ def match_template(match_tree, log_tokens):
 
 
 def get_all_templates(move_tree):
+    if isinstance(move_tree, tuple):
+        return move_tree[2]
     result = []
     for key, value in move_tree.items():
-        if isinstance(value, tuple):
-            result.append(value[2])
-        else:
-            result = result + get_all_templates(value)
+        result = result + get_all_templates(value)
     return result
 
 

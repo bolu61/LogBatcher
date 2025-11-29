@@ -1,33 +1,38 @@
-from collections import OrderedDict
+import random
 import re
+from collections import OrderedDict
+
+from sklearn.cluster import DBSCAN
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.cluster import DBSCAN
-from logbatcher.sample import group_samples_clustering, dpp_sample
+
+from logbatcher.sample import dpp_sample, group_samples_clustering
 from logbatcher.util import not_varibility
-import random
+
+
 class Cluster:
     def __init__(self):
         self.logs = []
         self.batch_logs = []
         self.indexs = []
         self.size = 0
-        self.sample_log = ''
-        
+        self.sample_log = ""
 
     def append_log(self, log, index):
         self.logs.append(log)
         self.indexs.append(index)
         self.size += 1
 
-    def varaible_sampling(self, batch_size=5,sample_method="dpp"):
-        self.batch_logs = list(OrderedDict.fromkeys(self.logs)) # remove duplicates
+    def varaible_sampling(self, batch_size=5, sample_method="dpp"):
+        self.batch_logs = list(OrderedDict.fromkeys(self.logs))  # remove duplicates
+
         def _replacer(match):
             char = match.group()
-            return '0' if char.isdigit() else 'a'
+            return "0" if char.isdigit() else "a"
+
         vars = []
         for var in self.batch_logs:
-            vars.append(re.sub(r'[0-9a-zA-Z]', _replacer, var))
+            vars.append(re.sub(r"[0-9a-zA-Z]", _replacer, var))
         vectorizer = TfidfVectorizer()
         tfidf_matrix = vectorizer.fit_transform(vars)
         tfidf_matrix = tfidf_matrix.toarray()
@@ -48,14 +53,18 @@ class Cluster:
         self.batch_logs = [self.batch_logs[i] for i in result]
 
     def batching(self, batch_size=10, min_size=3, sample_method="dpp"):
-        self.batch_logs = list(OrderedDict.fromkeys(self.logs)) # remove duplicates
+        self.batch_logs = list(OrderedDict.fromkeys(self.logs))  # remove duplicates
         if len(self.batch_logs) > batch_size:
             self.sample(batch_size, sample_method)
-        if type(self.batch_logs) == str:
+        if type(self.batch_logs) is str:
             self.batch_logs = [self.batch_logs]
         self.sample_log = self.batch_logs[0]
         if not_varibility(self.batch_logs):
-            self.batch_logs = self.batch_logs[:min_size] if len(self.batch_logs) > min_size else self.batch_logs
+            self.batch_logs = (
+                self.batch_logs[:min_size]
+                if len(self.batch_logs) > min_size
+                else self.batch_logs
+            )
 
     def sample(self, batch_size, sample_method):
         # vetorize logs
@@ -77,33 +86,36 @@ class Cluster:
         self.batch_logs = [self.batch_logs[i] for i in result]
         return
 
-def tokenize(log_content, tokenize_pattern=r'[ ,|]', removeDight=True):
+
+def tokenize(log_content, tokenize_pattern=r"[ ,|]", removeDight=True):
     words = re.split(tokenize_pattern, log_content)
     new_words = []
     for word in words:
-        if '=' in word:
-            ws = word.split('=')
+        if "=" in word:
+            ws = word.split("=")
             if len(ws) <= 2:
                 new_words.append(ws[0])
             else:
-                # might be some parameters of a URL 
-                pass 
+                # might be some parameters of a URL
+                pass
 
-        elif removeDight and re.search(r'\d', word):
+        elif removeDight and re.search(r"\d", word):
             pass
-        elif '/' in word.lower() or re.match(r"^[a-zA-Z][+-]$|^[+-][a-zA-Z]$", word):
+        elif "/" in word.lower() or re.match(r"^[a-zA-Z][+-]$|^[+-][a-zA-Z]$", word):
             pass
         else:
             word = re.sub(r"\([^)]*\)", "", word)
             new_words.append(word)
-    new_words = [word for word in new_words if word]   # remove null
+    new_words = [word for word in new_words if word]  # remove null
     if new_words == []:
-        new_words.append(re.sub(r'\d+(\.\d+)?', '0', log_content))
+        new_words.append(re.sub(r"\d+(\.\d+)?", "0", log_content))
     return new_words
 
 
 def vectorize(tokenized_logs):
-    vectorizer = TfidfVectorizer(tokenizer=lambda x: x, lowercase=False, token_pattern=None)
+    vectorizer = TfidfVectorizer(
+        tokenizer=lambda x: x, lowercase=False, token_pattern=None
+    )
     return vectorizer.fit_transform(tokenized_logs)
 
 
@@ -113,21 +125,22 @@ def cluster(vectorized_logs, eps=0.5):
     labels = cluster.labels_
     cluster_nums = max(labels) + 1
     return labels, cluster_nums
-    
+
 
 def reassign_clusters(labels, cluster_nums, tokenized_logs):
     mergerd_logs = []
     for tokenized_log in tokenized_logs:
-        mergerd_logs.append(' '.join(tokenized_log))
+        mergerd_logs.append(" ".join(tokenized_log))
 
     for i in range(len(labels)):
         if labels[i] == -1:
-            for j in range(i+1, len(labels)):
+            for j in range(i + 1, len(labels)):
                 if labels[j] == -1 and mergerd_logs[i] == mergerd_logs[j]:
                     labels[j] = cluster_nums
             labels[i] = cluster_nums
             cluster_nums += 1
     return labels, cluster_nums
+
 
 def process_new_cluster(new_cluster, clusters, batch_size, min_size=3):
     if new_cluster.size != 0:
@@ -135,3 +148,4 @@ def process_new_cluster(new_cluster, clusters, batch_size, min_size=3):
         clusters.append(new_cluster)
         return 1
     return 0
+
