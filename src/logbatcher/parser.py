@@ -1,26 +1,27 @@
 import csv
 import logging
+import re
+import string
 from collections.abc import Sequence
 from itertools import batched, islice
 from typing import Any
 
-from openai import APITimeoutError, OpenAI
+from openai import OpenAI
 from typeguard import check_type
 
-from logbatcher.additional_cluster import hierichical_clustering, meanshift_clustering
+from logbatcher.cache import ParsingCache
 from logbatcher.cluster import (
     Cluster,
     cluster,
+    hierichical_clustering,
+    meanshift_clustering,
     process_new_cluster,
     reassign_clusters,
     tokenize,
     vectorize,
 )
-from logbatcher.matching import prune_from_cluster
-from logbatcher.parsing_cache import ParsingCache
+from logbatcher.matching import extract_variables, prune_from_cluster
 from logbatcher.postprocess import correct_single_template, post_process
-from logbatcher.util import verify_template
-from logbatcher.vars import vars_update
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +202,22 @@ class LogBatcher:
 
         return [check_type(s, str) for s in outputs]
 
+
+def verify_template(template):
+    template = template.replace("<*>", "")
+    template = template.replace(" ", "")
+    return any(char not in string.punctuation for char in template)
+
+def vars_update(refer_log, template, candidates):
+    new_variables = extract_variables(refer_log, template)
+    extend_vars = []
+    if not new_variables:
+        return extend_vars
+    for var in new_variables:
+        var = re.sub(r'^\((.*)\)$|^\[(.*)\]$', r'\1\2', var)
+        if var not in candidates and not var.isdigit() and not var.isalpha() and len(var.split()) <= 3:
+            extend_vars.append(var)
+    return extend_vars
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)

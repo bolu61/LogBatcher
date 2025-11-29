@@ -1,10 +1,9 @@
-from functools import reduce
-from itertools import accumulate
-from operator import add
 import re
-import sys
 import signal
+import sys
+from functools import reduce
 from hashlib import sha256
+from operator import add
 from typing import Any, Literal
 
 from typeguard import check_type
