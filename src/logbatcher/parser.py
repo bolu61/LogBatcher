@@ -2,6 +2,7 @@ import csv
 import logging
 from collections.abc import Sequence
 from itertools import batched, islice
+from typing import Any
 
 from openai import APITimeoutError, OpenAI
 from typeguard import check_type
@@ -29,6 +30,18 @@ class LogBatcher:
         self.model = model
         self.client = OpenAI(base_url=base_url)
         self.cache = ParsingCache()
+
+    def __getstate__(self) -> dict[str, Any]:
+        return {
+            "model": self.model,
+            "base_url": self.client.base_url,
+            "cache": self.cache,
+        }
+
+    def __setstate__(self, state: dict[str, Any]):
+        self.model = state["model"]
+        self.client = OpenAI(base_url=state["base_url"])
+        self.cache = state["cache"]
 
     def chat(self, messages):
         response = self.client.chat.completions.create(
