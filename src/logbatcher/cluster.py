@@ -232,31 +232,6 @@ class Cluster:
         return
 
 
-def tokenize(log_content, tokenize_pattern=r"[ ,|]", removeDight=True):
-    words = re.split(tokenize_pattern, log_content)
-    new_words = []
-    for word in words:
-        if "=" in word:
-            ws = word.split("=")
-            if len(ws) <= 2:
-                new_words.append(ws[0])
-            else:
-                # might be some parameters of a URL
-                pass
-
-        elif removeDight and re.search(r"\d", word):
-            pass
-        elif "/" in word.lower() or re.match(r"^[a-zA-Z][+-]$|^[+-][a-zA-Z]$", word):
-            pass
-        else:
-            word = re.sub(r"\([^)]*\)", "", word)
-            new_words.append(word)
-    new_words = [word for word in new_words if word]  # remove null
-    if new_words == []:
-        new_words.append(re.sub(r"\d+(\.\d+)?", "0", log_content))
-    return new_words
-
-
 def vectorize(tokenized_logs):
     vectorizer = TfidfVectorizer(
         tokenizer=lambda x: x, lowercase=False, token_pattern=None
