@@ -108,7 +108,7 @@ class LogBatcher:
         template = post_process(answer)
 
         if not verify_template(template):
-            logger.warning(f"got {template=}")
+            logger.debug(f"got {template=}")
             template = correct_single_template(sample_log)
 
         cluster, new_cluster = prune_from_cluster(template, cluster)
@@ -197,7 +197,7 @@ class LogBatcher:
                 else:
                     id = caching.template_list.index(template)
                 if id < 0 or id >= len(caching.template_list):
-                    logger.warning(f"{template=} is invalid")
+                    logger.debug(f"{template=} is invalid")
                     for j, i in enumerate(old_cluster.indexs):
                         outputs[i] = old_cluster.logs[j]
                 else:
