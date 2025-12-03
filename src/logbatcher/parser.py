@@ -84,7 +84,8 @@ class LogBatcher:
         instruction = (
             "You will be provided with some log messages separated by line break. You must abstract variables with `{{placeholders}}` to extract the corresponding template. The variable type in log messages can be any of the following: ['url', 'IPv4_port', 'host_port', 'package_host', 'IPv6', 'Mac_address', 'time', 'path', 'id', 'date', 'duration', 'size', 'numerical', 'weekday_months', 'user_name']."
             + variable_prompt
-            + " Constant text and strings should not be recognized as variables.\nPrint the input log's template in a code block (delimited by triple backticks). DON'T PRINT CODE!"
+            + " Constant text and strings should not be recognized as variables.\nPrint the input log's template in a code block (delimited by triple backticks). Don't print any code."
+            + " E.g.:\n```\n{{url}} accessed at {{time}\n```"
         )
 
         # invoke LLM
