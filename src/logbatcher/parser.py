@@ -48,8 +48,6 @@ class LogBatcher:
             model=self.model,
             messages=messages,
             temperature=0.0,
-            timeout=10,
-            max_tokens=2048,
         )
         return (response.choices[0].message.content or "").strip("\n")
 
