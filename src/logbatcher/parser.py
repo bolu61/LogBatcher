@@ -48,7 +48,7 @@ class LogBatcher:
             model=self.model,
             messages=messages,
             temperature=0.0,
-            timeout=60
+            timeout=4
         )
 
         return (response.choices[0].message.content or "").strip("\n")
@@ -103,7 +103,7 @@ class LogBatcher:
             logger.debug(f"{answer=}")
         except Exception as error:
             logger.exception(f"while invoking llm got {error=}")
-            logger.warning(f"{sample_log=} not parsed")
+            logger.warning(f"{messages[1]=}")
             answer = sample_log
 
         template = post_process(answer)
