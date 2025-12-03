@@ -109,6 +109,7 @@ class LogBatcher:
         template = post_process(answer)
 
         if not verify_template(template):
+            logger.warning(f"got {template=}")
             template = correct_single_template(sample_log)
 
         cluster, new_cluster = prune_from_cluster(template, cluster)
