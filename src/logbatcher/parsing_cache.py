@@ -8,8 +8,11 @@ from hashlib import sha256
 from typing import Any, Literal
 
 from typeguard import check_type
+import logging
 
 sys.setrecursionlimit(1000000)
+
+logger = logging.getLogger(__name__)
 
 
 class TimeoutException(Exception):
@@ -135,6 +138,9 @@ class ParsingCache(object):
         if start_token not in self.template_tree:
             self.template_tree[start_token] = {}
         move_tree = self.template_tree[start_token]
+        if isinstance(move_tree, tuple):
+            logger.error(f"unexpected tuple {move_tree=} {template_tokens=}")
+            return template_id
 
         tidx = 1
         while tidx < len(template_tokens):
@@ -142,6 +148,9 @@ class ParsingCache(object):
             if token not in move_tree:
                 move_tree[token] = {}
             move_tree = move_tree[token]
+            if isinstance(move_tree, tuple):
+                logger.error(f"unexpected tuple {move_tree=} {template_tokens=}")
+                return template_id
             tidx += 1
 
         move_tree["".join(template_tokens)] = (
