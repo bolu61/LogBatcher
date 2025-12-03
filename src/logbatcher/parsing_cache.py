@@ -1,15 +1,15 @@
-from collections import defaultdict, Counter, OrderedDict
-import difflib
-from hashlib import sha256
+from functools import reduce
+from itertools import accumulate
+from operator import add
 import re
 import sys
+import signal
+from hashlib import sha256
 from typing import Any, Literal
 
-sys.setrecursionlimit(1000000)
-import multiprocessing as mp
+from typeguard import check_type
 
-import re
-import signal
+sys.setrecursionlimit(1000000)
 
 
 class TimeoutException(Exception):
@@ -230,8 +230,8 @@ def post_process_tokens(tokens, punc):
 
 
 def message_split(message):
-    punc = "!\"#$%&'()+,-/;:=?@.[\]^_`{|}~"
-    splitters = "\s\\" + "\\".join(punc)
+    punc = "!\"#$%&'()+,-/;:=?@.[\\]^_`{|}~"
+    splitters = "\\s\\" + "\\".join(punc)
     splitter_regex = re.compile("([{}])".format(splitters))
     tokens = re.split(splitter_regex, message)
 
@@ -308,13 +308,10 @@ def match_template(match_tree, log_tokens):
     return False, False, "", relevant_templates
 
 
-def get_all_templates(move_tree):
+def get_all_templates(move_tree) -> list[str]:
     if isinstance(move_tree, tuple):
-        return move_tree[2]
-    result = []
-    for key, value in move_tree.items():
-        result = result + get_all_templates(value)
-    return result
+        return [check_type(move_tree[2], str)]
+    return [*reduce(add, map(get_all_templates, move_tree.values()))]
 
 
 def find_template(move_tree, log_tokens, result, parameter_list, depth):

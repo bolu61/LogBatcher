@@ -1,9 +1,9 @@
+import csv
 import logging
 from collections.abc import Sequence
-from itertools import batched
+from itertools import batched, islice
 
-from openai import OpenAI
-from tenacity import retry, stop_after_attempt, wait_random_exponential
+from openai import APITimeoutError, OpenAI
 from typeguard import check_type
 
 from logbatcher.additional_cluster import hierichical_clustering, meanshift_clustering
@@ -30,12 +30,13 @@ class LogBatcher:
         self.client = OpenAI(base_url=base_url)
         self.cache = ParsingCache()
 
-    @retry(wait=wait_random_exponential(min=1, max=8), stop=stop_after_attempt(10))
     def chat(self, messages):
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
             temperature=0.0,
+            timeout=10,
+            max_tokens=2048,
         )
         return (response.choices[0].message.content or "").strip("\n")
 
@@ -83,9 +84,13 @@ class LogBatcher:
                 ),
             },
         ]
-        answer = self.chat(messages)
-        logger.debug(messages)
-        logger.debug(answer)
+        logger.debug(f"{messages=}")
+        try:
+            answer = self.chat(messages)
+        except APITimeoutError:
+            logger.debug("request timed out")
+            answer = sample_log
+        logger.debug(f"{answer=}")
 
         template = post_process(answer)
 
@@ -184,13 +189,17 @@ class LogBatcher:
 
 
 if __name__ == "__main__":
-    parser = LogBatcher("llama3.1", base_url="http://localhost:11434/v1/")
+    logging.basicConfig(level=logging.DEBUG)
+    logs = []
+    with open("HDFS_2k.csv") as f:
+        for row in islice(csv.reader(f), 1, None):
+            logs.append(row[6])
 
-    out = parser.parse([
-        "User at 100.100.100.100 attemped logging to node with id node_123123123",
-        "User at 100.123.100.100 attemped logging to node with id node_12353452346",
-        "User at 100.100.100.100 attemped logging to node with id node_100000",
-        "User at 100.100.100.100 attemped logging to node with id node_12399999123",
-    ])
+    parser = LogBatcher()
 
-    print(out)
+    out = parser.parse(logs)
+
+    pairs = [*zip(logs, out)]
+
+    for pair in pairs[:10]:
+        print(pair)
