@@ -193,9 +193,12 @@ class LogBatcher:
                             refer_log=refer_log,
                         )
                 else:
-                    id = caching.template_list.index(template)
+                    id = caching.template_list.index(template)    
                 for i in old_cluster.indexs:
-                    outputs[i] = caching.template_list[id]
+                    try:
+                        outputs[i] = caching.template_list[id]
+                    except Exception as e:
+                        print(id, len(caching.template_list))
 
         return [check_type(s, str) for s in outputs]
 
