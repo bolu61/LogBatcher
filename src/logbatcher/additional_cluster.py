@@ -1,15 +1,11 @@
-import pandas as pd
-import re
-import heapq
-from collections import Counter, defaultdict, deque, OrderedDict
-from sklearn.feature_extraction._stop_words import ENGLISH_STOP_WORDS
-import time
 import calendar
-import random
-import os
+import heapq
+import re
+import time
+from collections import Counter
+
 from sklearn.cluster import MeanShift
 from sklearn.feature_extraction.text import TfidfVectorizer
-
 
 
 class Vocab:
@@ -65,16 +61,12 @@ def clean(s):
     sorted_string = ''.join(sorted(unique_chars))
     s = re.sub(r':|\(|\)|=|,|"|\{|\}|@|$|\[|\]|\||;|\.?!', ' ', s)
     s = " ".join([word for word in s.strip().split() if not bool(re.search(r'\d', word))])
-    # trantab = str.maketrans(dict.fromkeys(list(string.punctuation)))
     return s, sorted_string
 
 
 def h_clustering(contents):
-    t1 = time.time()
     vocab = Vocab()
     vocab.build([v[0].split() for v in contents.values()])
-    t2 = time.time()
-    # print("Build time: ", t2 - t1)
 
     # hierichical clustering
     hierichical_clusters = {}
