@@ -4,7 +4,8 @@ from collections.abc import Sequence
 from itertools import batched, islice
 from typing import Any
 
-from openai import APITimeoutError, OpenAI
+from openai import OpenAI
+from tenacity import retry, stop_after_attempt, wait_random_exponential
 from typeguard import check_type
 
 from logbatcher.additional_cluster import hierichical_clustering, meanshift_clustering
@@ -42,7 +43,8 @@ class LogBatcher:
         self.model = state["model"]
         self.client = OpenAI(base_url=state["base_url"])
         self.cache = state["cache"]
-
+ 
+    @retry(wait=wait_random_exponential(min=1, max=8), stop=stop_after_attempt(10))
     def chat(self, messages):
         response = self.client.chat.completions.create(
             model=self.model,
