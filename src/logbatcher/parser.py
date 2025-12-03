@@ -43,7 +43,7 @@ class LogBatcher:
         self.model = state["model"]
         self.client = OpenAI(base_url=state["base_url"])
         self.cache = state["cache"]
- 
+
     @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(10))
     def chat(self, messages):
         response = self.client.chat.completions.create(
@@ -195,14 +195,14 @@ class LogBatcher:
                             refer_log=refer_log,
                         )
                 else:
-                    id = caching.template_list.index(template)    
-                for j, i in enumerate(old_cluster.indexs):
-                    try:
-                        outputs[i] = caching.template_list[id]
-                    except Exception as e:
-                        logger.exception(e)
-                        logger.warning(f"{old_cluster.logs[j]=} not parsed")
+                    id = caching.template_list.index(template)
+                if id < 0 or id >= len(caching.template_list):
+                    logger.warning(f"{template=} is invalid")
+                    for j, i in enumerate(old_cluster.indexs):
                         outputs[i] = old_cluster.logs[j]
+                else:
+                    for i in old_cluster.indexs:
+                        outputs[i] = caching.template_list[id]
 
         return [check_type(s, str) for s in outputs]
 
