@@ -28,7 +28,6 @@ def count_prompt_tokens(prompt, model_name):
     else:
         raise ValueError("Unsupported model: {}".format(model_name))
 
-    # 计算编码后的token数
     prompt_tokens = encoder.encode(prompt)
     return len(prompt_tokens)
 
@@ -68,7 +67,7 @@ def generate_logformat_regex(logformat):
         regex = ''
         for k in range(len(splitters)):
             if k % 2 == 0:
-                splitter = re.sub(' +', '\\\s+', splitters[k])
+                splitter = re.sub(' +', r'\\\s+', splitters[k])
                 regex += splitter
             else:
                 header = splitters[k].strip('<').strip('>')
