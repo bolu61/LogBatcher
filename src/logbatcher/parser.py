@@ -102,7 +102,7 @@ class LogBatcher:
             answer = self.chat(messages)
             logger.debug(f"{answer=}")
         except Exception as error:
-            logger.error(f"while invoking llm got {error=}")
+            logger.exception(f"while invoking llm got {error=}")
             logger.warning(f"{sample_log=} not parsed")
             answer = sample_log
 
