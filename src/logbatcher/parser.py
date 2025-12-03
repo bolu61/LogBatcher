@@ -100,10 +100,11 @@ class LogBatcher:
         logger.debug(f"{messages=}")
         try:
             answer = self.chat(messages)
-        except APITimeoutError:
-            logger.debug("request timed out")
+            logger.debug(f"{answer=}")
+        except Exception as error:
+            logger.error(f"while invoking llm got {error=}")
+            logger.warning(f"{sample_log=} not parsed")
             answer = sample_log
-        logger.debug(f"{answer=}")
 
         template = post_process(answer)
 
