@@ -1,11 +1,10 @@
-from collections.abc import Iterable, Sequence
-import json
-import os
-import time
-from collections import Counter
+import logging
+from collections.abc import Sequence
+from itertools import batched
 
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_random_exponential
+from typeguard import check_type
 
 from logbatcher.additional_cluster import hierichical_clustering, meanshift_clustering
 from logbatcher.cluster import (
@@ -19,18 +18,16 @@ from logbatcher.cluster import (
 from logbatcher.matching import prune_from_cluster
 from logbatcher.parsing_cache import ParsingCache
 from logbatcher.postprocess import correct_single_template, post_process
-from logbatcher.util import count_message_tokens, verify_template
+from logbatcher.util import verify_template
 from logbatcher.vars import vars_update
 
+logger = logging.getLogger(__name__)
 
-class Parser:
-    def __init__(self, model):
+
+class LogBatcher:
+    def __init__(self, /, model: str = "gpt-4o-mini", base_url: str | None = None):
         self.model = model
-        self.token_list = [0, 0]
-        self.time_consumption_llm = 0
-        base_url = os.environ.get("OPENAI_BASE_URL")
-        api_key = os.environ.get("OPENAI_API_KEY")
-        self.client = OpenAI(base_url=base_url, api_key=api_key)
+        self.client = OpenAI(base_url=base_url)
         self.cache = ParsingCache()
 
     @retry(wait=wait_random_exponential(min=1, max=8), stop=stop_after_attempt(10))
@@ -86,19 +83,12 @@ class Parser:
                 ),
             },
         ]
-        try:
-            t0 = time.time()
-            answer = self.chat(messages)
-            print(messages)
-            print(answer)
-            self.token_list[0] += 1
-            self.token_list[1] += count_message_tokens(messages, "gpt-4o-mini")
-            self.time_consumption_llm += time.time() - t0
-        except Exception as e:
-            print("invoke LLM error", e)
-            answer = sample_log
+        answer = self.chat(messages)
+        logger.debug(messages)
+        logger.debug(answer)
 
         template = post_process(answer)
+
         if not verify_template(template):
             template = correct_single_template(sample_log)
 
@@ -107,119 +97,100 @@ class Parser:
             cluster.logs, cluster.indexs = new_cluster.logs, new_cluster.indexs
             new_cluster = Cluster()
             template = correct_single_template(sample_log)
+
         return template, cluster, new_cluster
 
-    def __call__(
+    def parse(
         self,
-        batch: Sequence[str],
-        batch_size=10,
-        clustering_method="dbscan",
-    ):
-        logs = batch
+        logs: Sequence[str],
+        /,
+        batch_size: int = 10,
+        chunk_size: int = 10_000,
+        clustering_method: str = "dbscan",
+    ) -> list[str]:
         log_chunk = []
         log_chunk_index = []
         caching = self.cache
 
-        # TODO: clarify types
-        outputs_index: list[int] = [0 for _ in range(len(logs))]
+        outputs: list[str | None] = [None for _ in range(len(logs))]
 
         # Parsing
-        for index, log in enumerate(logs):
-            match_results = caching.match_event(log)
-            if match_results[0] != "NoMatch":
-                outputs_index[index] = match_results[1]
-            else:
-                log_chunk.append(log)
-                log_chunk_index.append(index)
-
-        # parsing start
-        if clustering_method == "dbscan":
-            # tokenize -> vectorize -> cluster -> reassign_clusters
-            tokenized_logs = [tokenize(log) for log in log_chunk]
-            labels, cluster_nums = cluster(vectorize(tokenized_logs))
-            labels, cluster_nums = reassign_clusters(
-                labels, cluster_nums, tokenized_logs
-            )
-        elif clustering_method == "hierarchical":
-            labels, cluster_nums = hierichical_clustering(log_chunk)
-        elif clustering_method == "meanshift":
-            labels, cluster_nums = meanshift_clustering(log_chunk)
-        else:
-            raise ValueError("Invalid clustering method")
-
-        # create clusters
-        clusters = [Cluster() for _ in range(cluster_nums)]
-        for label, log, index in zip(labels, log_chunk, log_chunk_index):
-            clusters[label].append_log(log, index)
-
-        # sorting
-        clusters.sort(key=lambda cluster: len(cluster.logs), reverse=True)
-
-        # batching
-        [cluster.batching(batch_size) for cluster in clusters]
-
-        # parsing
-        for index, old_cluster in enumerate(clusters):
-            template, old_cluster, new_cluster = self.get_responce(old_cluster)
-            # update clusters
-            cluster_nums += process_new_cluster(new_cluster, clusters, batch_size)
-            refer_log = old_cluster.logs[0]
-            if template not in caching.template_list:
-                if verify_template(template):
-                    id, _, _ = caching.add_templates(
-                        event_template=template,
-                        insert=False,
-                        refer_log=refer_log,
-                    )
-                    caching.variable_candidates.extend(
-                        vars_update(refer_log, template, caching.variable_candidates)
-                    )
+        for batch in batched(enumerate(logs), n=chunk_size):
+            for i, log in batch:
+                result, template_id, _ = caching.match_event(log)
+                if result != "NoMatch" and template_id != "NoMatch":
+                    outputs[i] = caching.template_list[template_id]
                 else:
-                    id, _, _ = caching.add_templates(
-                        event_template=refer_log,
-                        insert=False,
-                        refer_log=refer_log,
-                    )
+                    log_chunk.append(log)
+                    log_chunk_index.append(i)
+
+            # parsing start
+            if clustering_method == "dbscan":
+                # tokenize -> vectorize -> cluster -> reassign_clusters
+                tokenized_logs = [tokenize(log) for log in log_chunk]
+                labels, cluster_nums = cluster(vectorize(tokenized_logs), eps=0.5)
+                labels, cluster_nums = reassign_clusters(
+                    labels, cluster_nums, tokenized_logs
+                )
+            elif clustering_method == "hierarchical":
+                labels, cluster_nums = hierichical_clustering(log_chunk)
+            elif clustering_method == "meanshift":
+                labels, cluster_nums = meanshift_clustering(log_chunk)
             else:
-                id = caching.template_list.index(template)
-            for index in old_cluster.indexs:
-                outputs_index[index] = id
+                raise ValueError("Invalid clustering method")
 
-        outputs: list[str] = [caching.template_list[i] for i in outputs_index]
+            # create clusters
+            clusters = [Cluster() for _ in range(cluster_nums)]
+            for label, log, i in zip(labels, log_chunk, log_chunk_index):
+                clusters[label].append_log(log, i)
 
-        # Result
-        t2 = time.time()
-        print(f"parsing time: {t2 - t1}")
-        print(f"idetified templates: {len(set(outputs))}")
+            # sorting
+            clusters.sort(key=lambda cluster: len(cluster.logs), reverse=True)
 
-        # output logs
-        output_log_file = output_dir + f"{dataset}_full.log_structured.csv"
-        df = pd.DataFrame({"Content": logs, "EventTemplate": outputs})
-        df.to_csv(output_log_file, index=False)
+            # batching
+            [cluster.batching(batch_size) for cluster in clusters]
 
-        # output templates
-        counter = Counter(outputs)
-        items = list(counter.items())
-        items.sort(key=lambda x: x[1], reverse=True)
-        output_template_file = output_dir + f"{dataset}_full.template_structured.csv"
-        template_df = pd.DataFrame(items, columns=["EventTemplate", "Occurrence"])
-        template_df["EventID"] = [f"E{i + 1}" for i in range(len(template_df))]
-        template_df[["EventID", "EventTemplate", "Occurrence"]].to_csv(
-            output_template_file, index=False
-        )
+            # parsing
+            for i, old_cluster in enumerate(clusters):
+                template, old_cluster, new_cluster = self.get_responce(old_cluster)
+                # update clusters
+                cluster_nums += process_new_cluster(new_cluster, clusters, batch_size)
+                refer_log = old_cluster.logs[0]
+                id: int
+                if template not in caching.template_list:
+                    if verify_template(template):
+                        id, _, _ = caching.add_templates(
+                            event_template=template,
+                            insert=False,
+                            refer_log=refer_log,
+                        )
+                        caching.variable_candidates.extend(
+                            vars_update(
+                                refer_log, template, caching.variable_candidates
+                            )
+                        )
+                    else:
+                        id, _, _ = caching.add_templates(
+                            event_template=refer_log,
+                            insert=False,
+                            refer_log=refer_log,
+                        )
+                else:
+                    id = caching.template_list.index(template)
+                for i in old_cluster.indexs:
+                    outputs[i] = caching.template_list[id]
 
-        # Save time cost
-        time_cost_file = output_dir + "time_cost.json"
-        time_table = {}
-        if os.path.exists(time_cost_file):
-            with open(time_cost_file, "r") as file:
-                time_table = json.load(file)
-        time_table[dataset] = {
-            "InvocatingTime": parser.time_consumption_llm.__round__(3),
-            "ParsingTime": (t2 - t1).__round__(3),
-            "HitNum": caching.hit_num,
-            "len_of_hashing_table": len(caching.hashing_cache),
-            "TokenCount": parser.token_list,
-        }
-        with open(time_cost_file, "w") as file:
-            json.dump(time_table, file)
+        return [check_type(s, str) for s in outputs]
+
+
+if __name__ == "__main__":
+    parser = LogBatcher("llama3.1", base_url="http://localhost:11434/v1/")
+
+    out = parser.parse([
+        "User at 100.100.100.100 attemped logging to node with id node_123123123",
+        "User at 100.123.100.100 attemped logging to node with id node_12353452346",
+        "User at 100.100.100.100 attemped logging to node with id node_100000",
+        "User at 100.100.100.100 attemped logging to node with id node_12399999123",
+    ])
+
+    print(out)
