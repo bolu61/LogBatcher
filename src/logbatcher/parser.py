@@ -44,7 +44,7 @@ class LogBatcher:
         self.client = OpenAI(base_url=state["base_url"])
         self.cache = state["cache"]
  
-    @retry(wait=wait_random_exponential(min=1, max=8), stop=stop_after_attempt(10))
+    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(10))
     def chat(self, messages):
         response = self.client.chat.completions.create(
             model=self.model,
