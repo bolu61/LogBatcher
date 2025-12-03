@@ -199,6 +199,7 @@ class LogBatcher:
                         outputs[i] = caching.template_list[id]
                     except Exception as e:
                         print(id, len(caching.template_list))
+                        raise e
 
         return [check_type(s, str) for s in outputs]
 
