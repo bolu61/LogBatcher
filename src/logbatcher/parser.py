@@ -201,6 +201,7 @@ class LogBatcher:
                         outputs[i] = caching.template_list[id]
                     except Exception as e:
                         logger.exception(e)
+                        logger.warning(f"{old_cluster.logs[j]=} not parsed")
                         outputs[i] = old_cluster.logs[j]
 
         return [check_type(s, str) for s in outputs]
