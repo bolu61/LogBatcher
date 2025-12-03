@@ -48,7 +48,6 @@ class LogBatcher:
             model=self.model,
             messages=messages,
             temperature=0.0,
-            timeout=4
         )
 
         return (response.choices[0].message.content or "").strip("\n")
