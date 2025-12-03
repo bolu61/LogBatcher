@@ -196,10 +196,12 @@ class LogBatcher:
                         )
                 else:
                     id = caching.template_list.index(template)    
-                for i in old_cluster.indexs:
-                    if id == -1:
-                        outputs[i] = old_cluster.sample_log
-                    outputs[i] = caching.template_list[id]
+                for j, i in enumerate(old_cluster.indexs):
+                    try:
+                        outputs[i] = caching.template_list[id]
+                    except Exception as e:
+                        logger.exception(e)
+                        outputs[i] = old_cluster.logs[j]
 
         return [check_type(s, str) for s in outputs]
 
