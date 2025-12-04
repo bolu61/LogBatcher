@@ -104,7 +104,7 @@ class LogBatcher:
             answer = self.chat(messages)
             logger.debug(f"{answer=}")
         except Exception as error:
-            logger.error(f"while invoking llm with {messages[1]=} got {error=}")
+            logger.debug(f"while invoking llm with {messages[1]=} got {error=}")
             answer = sample_log
 
         template = post_process(answer)
