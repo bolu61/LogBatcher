@@ -74,7 +74,10 @@ class LogBatcher:
         variable_cluster = Cluster()
         variable_cluster.logs = cache_base.variable_candidates
         if variable_cluster.logs != []:
-            variable_cluster.varaible_sampling(5)
+            try:
+                variable_cluster.varaible_sampling(5)
+            except ValueError as e:
+                logger.debug(e)
         variables = variable_cluster.batch_logs
 
         variable_prompt = (
