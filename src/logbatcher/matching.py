@@ -9,7 +9,7 @@ class TimeoutException(Exception):
 def timeout_handler(signum, frame):
     raise TimeoutException()
 
-def safe_search(pattern, string, timeout=0.5):
+def safe_search(pattern, string, timeout=1):
     signal.signal(signal.SIGALRM, timeout_handler)
     signal.alarm(timeout)
     try:
