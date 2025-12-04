@@ -1,27 +1,25 @@
 import csv
 import logging
+import random
 import re
 from collections.abc import Sequence
 from itertools import batched, islice
-import string
 from typing import Any
 
 from openai import OpenAI
 from typeguard import check_type
 
-from logbatcher.cache import ParsingCache, Template
+from logbatcher.cache import ParsingCache
+from logbatcher.template import Template
 from logbatcher.cluster import (
     Cluster,
     cluster,
-    hierichical_clustering,
-    meanshift_clustering,
-    process_new_cluster,
     reassign_clusters,
-    tokenize,
     vectorize,
+    prune_from_cluster,
 )
-from logbatcher.matching import extract_variables, prune_from_cluster
 from logbatcher.postprocess import correct_single_template, post_process
+from logbatcher.sample import sample
 
 logger = logging.getLogger(__name__)
 
@@ -55,31 +53,17 @@ class LogBatcher:
         return (response.choices[0].message.content or "").strip("\n")
 
     # TODO: refactor
-    def get_responce(self, cluster: Cluster) -> tuple[Template, Cluster, Cluster]:
+    def make_template(self, cluster: Cluster[str]) -> Template:
         # initialize
-        logs = cluster.batch_logs
-        sample_log = cluster.sample_log
-        cache_base = self.cache
+        logs = [log for i, log in cluster]
 
         # TODO: refactor and move to parse
         # Matching and Pruning
-        new_cluster = Cluster()
-        for log in cluster.logs:
-            if (match := cache_base.match(log)) is not None:
-                cluster, new_cluster = prune_from_cluster(match.template, cluster)
-                if new_cluster.size >= 0 and new_cluster.size < cluster.size:
-                    return match.template, cluster, new_cluster
-                elif new_cluster.size == cluster.size:
-                    cluster.logs, cluster.indexs = new_cluster.logs, new_cluster.indexs
-                    new_cluster = Cluster()
+        for _, log in cluster:
+            if (match := self.cache.match(log)) is not None:
+                cluster, _ = prune_from_cluster(match.template, cluster)
 
-        # TODO: refactor clusters and variable clusters
-        # historical variables
-        variable_cluster = Cluster()
-        variable_cluster.logs = cache_base.variable_candidates
-        if variable_cluster.logs != []:
-            variable_cluster.varaible_sampling(5)
-        variables = variable_cluster.batch_logs
+        variables = sample(list(self.cache.variable_candidates), 5)
 
         variable_prompt = (
             f" Historical variables: {variables}." if variables != [] else ""
@@ -101,19 +85,19 @@ class LogBatcher:
             },
         ]
         logger.debug(f"{messages=}")
+        answer: str
         try:
             answer = self.chat(messages)
             logger.debug(f"{answer=}")
         except Exception as error:
-            logger.error(f"while invoking llm got {error=}")
-            logger.warning(f"{sample_log=} not parsed")
-            answer = sample_log
+            logger.debug(f"while invoking llm with {messages=} got {error=}")
+            answer = random.sample(logs, k=1)[0]
 
-        template: Template = tokenize(post_process(answer))
+        template: Template = Template.from_str(post_process(answer))
 
         # TODO: refactor
         if not verify_template(template):
-            template = correct_single_template(tokenize(sample_log))
+            template = correct_single_template((sample_log))
 
         cluster, new_cluster = prune_from_cluster(template, cluster)
         if new_cluster.size == cluster.size:
@@ -177,7 +161,7 @@ class LogBatcher:
 
             # parsing
             for i, old_cluster in enumerate(clusters):
-                template, old_cluster, new_cluster = self.get_responce(old_cluster)
+                template, old_cluster, new_cluster = self.make_template(old_cluster)
                 # update clusters
                 cluster_nums += process_new_cluster(new_cluster, clusters, batch_size)
                 if template not in caching:
@@ -200,12 +184,10 @@ class LogBatcher:
 
 
 def verify_template(template: Template) -> bool:
-    out = ""
-    for token in template:
-        token = token.replace("<*>", "")
-        token = token.replace(" ", "")
-        out += token
-    return any(char not in string.punctuation for char in out)
+    for token in template.tokens:
+        if re.search(r"\w", token) is not None:
+            return True
+    return False
 
 
 # TODO: refactor

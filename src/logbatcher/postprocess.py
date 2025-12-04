@@ -3,32 +3,13 @@ import re
 from logbatcher.cache import Template
 
 
-def post_process(response):
-    response = response.replace("\n", "")
-    first_backtick_index = response.find("`")
-    last_backtick_index = response.rfind("`")
-    if (
-        first_backtick_index == -1
-        or last_backtick_index == -1
-        or first_backtick_index == last_backtick_index
-    ):
-        tmps = []
-    else:
-        tmps = response[first_backtick_index : last_backtick_index + 1].split("`")
-    for tmp in tmps:
-        if tmp.replace(" ", "").replace("<*>", "") == "":
-            tmps.remove(tmp)
-    tmp = ""
-    if len(tmps) == 1:
-        tmp = tmps[0]
-    if len(tmps) > 1:
-        tmp = max(tmps, key=len)
+def postprocess(response: str) -> str | None:
+    try:
+        template = next(re.finditer(r"`+\n?(.*?)\n?`*", response)).group()
+    except StopIteration:
+        return None
 
-    template = re.sub(r"\{\{.*?\}\}", "<*>", tmp)
-    template = re.sub(r"\$\{.*?\}", "<*>", template)
-    template = correct_single_template(template)
-    if template.replace("<*>", "").replace(" ", "") == "":
-        template = ""
+    template = re.sub(r"\{\{.*\}\}", "<*>", template)
 
     return template
 
@@ -47,7 +28,7 @@ def exclude_digits(string):
         return len(digits) / len(string) > 0.3
 
 
-def correct_single_template(template: Template, user_strings=None):
+def correct_single_template(template: str, user_strings=None):
     """Apply all rules to process a template.
 
     DS (Double Space)
