@@ -26,9 +26,9 @@ logger = logging.getLogger(__name__)
 
 
 class LogBatcher:
-    def __init__(self, /, model: str = "gpt-4o-mini", base_url: str | None = None):
+    def __init__(self, /, model: str = "gpt-4o-mini", **kwargs):
         self.model = model
-        self.client = OpenAI(base_url=base_url, max_retries=8,)
+        self.client = OpenAI(**kwargs)
         self.cache = ParsingCache()
 
     def __getstate__(self) -> dict[str, Any]:
