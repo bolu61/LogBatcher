@@ -2,6 +2,7 @@ import csv
 import logging
 from collections.abc import Sequence
 from itertools import batched, islice
+import sys
 from typing import Any
 
 from openai import OpenAI
@@ -207,20 +208,3 @@ class LogBatcher:
                         outputs[i] = caching.template_list[id]
 
         return [check_type(s, str) for s in outputs]
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG)
-    logs = []
-    with open("HDFS_2k.csv") as f:
-        for row in islice(csv.reader(f), 1, None):
-            logs.append(row[6])
-
-    parser = LogBatcher()
-
-    out = parser.parse(logs)
-
-    pairs = [*zip(logs, out)]
-
-    for pair in pairs[:10]:
-        print(pair)

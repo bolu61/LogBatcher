@@ -1,0 +1,9 @@
+#! /usr/bin/env sh
+
+export OPENAI_API_KEY="ollama"
+export OPENAI_BASE_URL="http://localhost:11434/v1/"
+export OPENAI_TIMEOUT=4
+export OPENAI_MAX_RETRIES=0
+export LOGBATCHER_MODEL="gemma3:27b"
+
+python -m logbatcher $@
