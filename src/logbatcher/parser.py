@@ -1,6 +1,6 @@
 import csv
 import logging
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from itertools import batched, islice
 import sys
 from typing import Any
@@ -124,7 +124,7 @@ class LogBatcher:
 
     def parse(
         self,
-        logs: Sequence[str],
+        logs: Iterable[str],
         /,
         batch_size: int = 10,
         chunk_size: int = 10_000,
@@ -134,10 +134,12 @@ class LogBatcher:
         log_chunk_index = []
         caching = self.cache
 
-        outputs: list[str | None] = [None for _ in range(len(logs))]
+        outputs: list[str | None] = []
 
         # Parsing
         for batch in batched(enumerate(logs), n=chunk_size):
+            outputs += [None for _ in range(len(batch))]
+
             for i, log in batch:
                 result, template_id, _ = caching.match_event(log)
                 if result != "NoMatch" and template_id != "NoMatch":
